@@ -1,0 +1,334 @@
+#!/bin/bash
+
+# Print the help message
+print_help()
+{
+    echo "NAME"
+    echo "    buildsd"
+    echo
+    echo "SYNOPSIS"
+    echo -e "    ./buildsd ([ -h | --help ] | [ -v | --version \e[3mversion\e[0m ] | [ -s | --source \e[3msource_dir\e[0m ]) [ -o | --output \e[3moutput_dir\e[0m ]"
+    echo
+    echo "DESCRIPTION"
+    echo "    Downloads & reproducibly builds a version of the SILENT DATA enclave to obtain its MRENCLAVE value"
+    echo
+    echo "OPTIONS:"
+    echo "    -h, --help:"
+    echo "        Print this help message"
+    echo
+    echo "    -v, --version:"
+    echo "        The version of the code to build, this can be a branch, tag or commit hash."
+    echo
+    echo "    -s, --source:"
+    echo "        The path to the source code to build"
+    echo
+    echo "    -o, --output:"
+    echo "        The path to the output directory (optional)"
+    echo "        By default a new timestamped directory will be created"
+    echo
+    echo "EXAMPLES:"
+    echo "    ./build --help"
+    echo "        Print this help message"
+    echo
+    echo "    ./build --version my_tag"
+    echo "        Build the version with tag \"my_tag\""
+    echo
+    echo "    ./build --source enclave"
+    echo "        Build from the source code in the directory \"enclave\""
+}
+
+# -----------------------------------------------------------------------------
+
+# Print a log message
+#
+# 1. The message
+log()
+{
+    echo "[SILENT DATA BUILDER] ${1}"
+}
+
+# -----------------------------------------------------------------------------
+
+# Print an error message and exit
+#
+# 1. The line number
+# 2-N. The error message
+error_and_exit()
+{
+    LINE_NUMBER=$1
+    shift
+
+    while [ "$1" != "" ]; do
+        log "ERROR [${LINE_NUMBER}]: $1" 1>&2
+        shift
+    done
+    exit 1
+}
+
+# -----------------------------------------------------------------------------
+
+# Require that the input isn't empty
+#
+# 1. The input value
+# 2. The line number where the check takes place
+# 3. A name for the input to include in the error message
+require_not_empty()
+{
+    if [ -z "$1" ]; then
+        error_and_exit $2 "The input $3 must not be empty"
+    fi
+}
+
+# -----------------------------------------------------------------------------
+
+# Validate the configuration parameters
+validate_config()
+{
+    if [ -z "$VERSION" ] && [ -z "$SOURCE_CODE_DIR" ]; then
+        error_and_exit $LINENO "Please pass either a version number (--version) or a path to the source code (--source)."\
+                       "Use --help for more details."
+    fi
+}
+
+# -----------------------------------------------------------------------------
+
+# Expand a (possibly) relative path & verify that it exists
+#
+# 1. The file path
+expand_file_path()
+{
+    EXPANDED_DIR=$(readlink -f $1)
+    if [ $? -ne 0 ]; then
+        error_and_exit $LINENO "Error expanding path ${1}"\
+                               "Please ensure this directory exists"
+    fi
+
+    echo $EXPANDED_DIR
+}
+
+# -----------------------------------------------------------------------------
+
+# Parse the command line arguments
+#
+# 1-N. The input command line arguments
+parse_config()
+{
+    while [ "$1" != "" ]; do
+        case $1 in
+            -h | --help )
+                print_help
+                exit 0
+                ;;
+            -v | --version )
+                shift
+                require_not_empty "$1" $LINENO "version"
+                VERSION=$1
+                ;;
+            -s | --source )
+                shift
+                require_not_empty "$1" $LINENO "source code directory"
+                SOURCE_CODE_DIR=$(expand_file_path $1)
+                ;;
+            -o | --output )
+                shift
+                require_not_empty "$1" $LINENO "output directory"
+                OUTPUT_DIR=$(expand_file_path $1)
+                ;;
+            * )
+                error_and_exit $LINENO "Unknown option $1"
+        esac
+        shift
+    done
+}
+
+# -----------------------------------------------------------------------------
+
+# Make a new directory & verify that it doesn't already exist
+#
+# 1. the directory to make
+mkdir_safe()
+{
+    if [ -d "$1" ]; then
+        error_and_exit $LINENO "Directory \"$1\" already exists"
+    fi
+
+    mkdir -p $1
+}
+
+# -----------------------------------------------------------------------------
+
+# Make a new source code directory structure for this version
+make_source_dirs()
+{
+    BASE_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+    SCRIPTS_DIR=$BASE_DIR/scripts
+
+    # Make a new output directory if not specified
+    if [ -z "$OUTPUT_DIR" ]; then
+        TIMESTAMP=$(date +"%s")
+        OUTPUT_DIR=$BASE_DIR/builds/$TIMESTAMP
+        mkdir_safe $OUTPUT_DIR
+    fi
+    log "OUTPUT_DIR=${OUTPUT_DIR}"
+
+    # Ensure the output directory is empty
+    if [ "$(ls -A $OUTPUT_DIR)" ]; then
+        error_and_exit $LINENO "The output directory ${OUTPUT_DIR} isn't empty"
+    fi
+
+    SGX_SOURCE_DIR=$OUTPUT_DIR/sgx
+    mkdir_safe $SGX_SOURCE_DIR
+    log "SGX_SOURCE_DIR=${SGX_SOURCE_DIR}"
+
+    MBED_SOURCE_DIR=$OUTPUT_DIR/mbedtls-compat-sgx
+    mkdir_safe $MBED_SOURCE_DIR
+    log "MBED_SOURCE_DIR=${MBED_SOURCE_DIR}"
+
+    ENCLAVE_SOURCE_DIR=$OUTPUT_DIR/silentdata-defi-enclave
+    mkdir_safe $ENCLAVE_SOURCE_DIR
+    log "ENCLAVE_SOURCE_DIR=${ENCLAVE_SOURCE_DIR}"
+}
+
+# -----------------------------------------------------------------------------
+
+# Clone the SGX repo, download the pre-built binaries & the installer
+clone_sgx()
+{
+    require_not_empty "$SGX_SOURCE_DIR" $LINENO "SGX_SOURCE_DIR"
+
+    SGX_SOURCE_REPO=https://github.com/intel/linux-sgx.git
+    SGX_SOURCE_BRANCH=sgx_2.15_reproducible
+    log "Cloning ${SGX_SOURCE_REPO} with branch ${SGX_SOURCE_BRANCH}"
+    git clone -b $SGX_SOURCE_BRANCH $SGX_SOURCE_REPO $SGX_SOURCE_DIR
+    pushd $SGX_SOURCE_DIR
+    ./download_prebuilt.sh
+    popd
+
+    SGX_SDK_INSTALLER=sgx_linux_x64_sdk_reproducible_2.15.100.1.bin
+    SGX_SDK_INSTALLER_BASE_URL=https://download.01.org/intel-sgx/sgx-linux/2.15/distro/nix_reproducibility
+    log "Downloading SDK installer ${SGX_SDK_INSTALLER} from ${SGX_SDK_INSTALLER_BASE_URL}"
+    pushd $OUTPUT_DIR
+    wget $SGX_SDK_INSTALLER_BASE_URL/$SGX_SDK_INSTALLER
+    chmod +x $SGX_SDK_INSTALLER
+    popd
+}
+
+# -----------------------------------------------------------------------------
+
+# Clone the mbedtls-compat-sgx repo
+clone_mbedtls()
+{
+    require_not_empty "$MBED_SOURCE_DIR" $LINENO "MBED_SOURCE_DIR"
+
+    MBED_SOURCE_REPO=https://github.com/ffosilva/mbedtls-compat-sgx.git
+    MBED_SOURCE_TAG=tags/2.24.0
+    log "Cloning ${MBED_SOURCE_REPO} with tag ${MBED_SOURCE_TAG}"
+    git clone $MBED_SOURCE_REPO --recursive $MBED_SOURCE_DIR
+    pushd $MBED_SOURCE_DIR
+    git checkout $MBED_SOURCE_TAG
+    git submodule update
+    popd
+}
+
+# -----------------------------------------------------------------------------
+
+# Clone the SILENT DATA enclave
+clone_enclave()
+{
+    require_not_empty "$ENCLAVE_SOURCE_DIR" $LINENO "ENCLAVE_SOURCE_DIR"
+    require_not_empty "$VERSION" $LINENO "VERSION"
+
+    ENCLAVE_SOURCE_REPO=https://github.com/appliedblockchain/silentdata-defi-enclave.git
+    log "Cloning ${ENCLAVE_SOURCE_REPO} with version ${VERSION}"
+    git clone $ENCLAVE_SOURCE_REPO $ENCLAVE_SOURCE_DIR
+    pushd $ENCLAVE_SOURCE_DIR
+    git checkout $VERSION
+    popd
+}
+
+# -----------------------------------------------------------------------------
+
+# Copy the SILENT DATA enclave
+copy_enclave()
+{
+    require_not_empty "$ENCLAVE_SOURCE_DIR" $LINENO "ENCLAVE_SOURCE_DIR"
+    require_not_empty "$SOURCE_CODE_DIR" $LINENO "SOURCE_CODE_DIR"
+
+    log "Copying source code from ${SOURCE_CODE_DIR}"
+    rsync -a $SOURCE_CODE_DIR/* $ENCLAVE_SOURCE_DIR
+}
+
+# -----------------------------------------------------------------------------
+
+# Build the builder image (if needed)
+setup_builder_image()
+{
+    ENCLAVE_BUILDER_IMAGE=silentdata-enclave-builder
+    log "Verifying ${ENCLAVE_BUILDER_IMAGE} image exists"
+    set +e && docker image inspect $ENCLAVE_BUILDER_IMAGE:latest > /dev/null 2>&1 && set -e
+    if [ $? != 0 ]; then
+        log "Building ${ENCLAVE_BUILDER_IMAGE} image"
+        require_not_empty "$SCRIPTS_DIR" $LINENO "SCRIPTS_DIR"
+        docker build -t $ENCLAVE_BUILDER_IMAGE -f $SCRIPTS_DIR/Dockerfile .
+    fi
+}
+
+# -----------------------------------------------------------------------------
+
+# Copy scripts to the output directory
+copy_scripts()
+{
+    require_not_empty "$OUTPUT_DIR" $LINENO "OUTPUT_DIR"
+    require_not_empty "$SCRIPTS_DIR" $LINENO "SCRIPTS_DIR"
+
+    log "Copying scripts to output directory"
+    rsync -a $SCRIPTS_DIR/* $OUTPUT_DIR/.
+
+    MOUNT_DIR=/linux-sgx
+    log "Setting MOUNT_DIR in \"start_build\" to ${MOUNT_DIR}"
+    sed -i "s|MOUNT_DIR|${MOUNT_DIR}|g" $OUTPUT_DIR/start_build
+}
+
+# -----------------------------------------------------------------------------
+
+# Run the build
+start_build()
+{
+    require_not_empty "$ENCLAVE_BUILDER_IMAGE" $LINENO "ENCLAVE_BUILDER_IMAGE"
+    require_not_empty "$OUTPUT_DIR" $LINENO "OUTPUT_DIR"
+    require_not_empty "$MOUNT_DIR" $LINENO "MOUNT_DIR"
+
+    log "Starting the build"
+    docker run -v $OUTPUT_DIR:$MOUNT_DIR \
+           -it \
+           --network none \
+           --rm silentdata-enclave-builder \
+           /bin/bash -c $MOUNT_DIR/start_build
+}
+
+# =============================================================================
+
+set -e
+
+# Parse the configuration options from the command line
+parse_config $@
+validate_config
+
+# Clone the dependencies
+make_source_dirs
+clone_sgx
+clone_mbedtls
+
+# Clone or copy the enclave source code
+if [ ! -z "$SOURCE_CODE_DIR" ]; then
+    copy_enclave
+else
+    clone_enclave
+fi
+
+# Run the build
+setup_builder_image
+copy_scripts
+start_build
+
+set +e

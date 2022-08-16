@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+message APIConfig {
+  string client = 1;
+  string client_id = 2;
+  string secret = 3;
+  string environment = 4;
+  int32 server_timestamp = 5;
+  string redirect_uri = 6;
+}
+
+message ClientInfo {
+  bytes encryption_public_key = 1;
+  string proof_id = 2;
+  int32 client_timestamp = 3;
+  bytes encrypted_input = 4;
+  bytes allowed_certificates = 5;
+}
+
+message AccountNumbers {
+  string ach_account_number = 1;
+  string ach_routing = 2;
+  string ach_wire_routing = 3;
+  string iban = 4;
+  string uk_account_number = 5;
+  string uk_sort_code = 6;
+  string eft_account_number = 7;
+  string eft_institution = 8;
+  string eft_branch = 9;
+  string bic = 10;
+}
+
+message WalletInfo {
+  enum Blockchain {
+      ALGORAND = 0;
+      SOLANA = 1;
+  }
+  Blockchain blockchain = 1;
+  bytes wallet_public_key = 2;
+  bytes signature = 3;
+  bytes encrypted_signed_data = 4;
+  enum Encoding {
+      RAW = 0;
+      HEX_UTF8 = 1;
+  }
+  Encoding encoding = 5;
+  bytes program_hash = 6;
+}

@@ -1,0 +1,184 @@
+#!/bin/bash
+
+# Print a log message
+#
+# 1. The message
+log()
+{
+    echo "[SILENT DATA BUILDER] ${1}"
+}
+
+# -----------------------------------------------------------------------------
+
+# Print an error message and exit
+#
+# 1. The line number
+# 2-N. The error message
+error_and_exit()
+{
+    LINE_NUMBER=$1
+    shift
+
+    while [ "$1" != "" ]; do
+        log "ERROR [${LINE_NUMBER}]: $1" 1>&2
+        shift
+    done
+    exit 1
+}
+
+# -----------------------------------------------------------------------------
+
+# Require that the input isn't empty
+#
+# 1. The input value
+# 2. The line number where the check takes place
+# 3. A name for the input to include in the error message
+require_not_empty()
+{
+    if [ -z "$1" ]; then
+        error_and_exit $2 "The input $3 must not be empty"
+    fi
+}
+
+# -----------------------------------------------------------------------------
+
+# Make a new directory & verify that it doesn't already exist
+#
+# 1. the directory to make
+mkdir_safe()
+{
+    if [ -d "$1" ]; then
+        error_and_exit $LINENO "Directory \"$1\" already exists"
+    fi
+
+    mkdir -p $1
+}
+
+# -----------------------------------------------------------------------------
+
+# Install the linux SGX SDK
+install_sgx_sdk()
+{
+    require_not_empty "$MOUNT_DIR" $LINENO "MOUNT_DIR"
+
+    log "Running the SGX SDK installer"
+    SGX_SDK_INSTALLER="$(find $MOUNT_DIR -name "sgx_linux_x64_sdk*.bin")"
+    $SGX_SDK_INSTALLER --prefix=$MOUNT_DIR
+
+    log "Setting up the environment for using the SGX SDK"
+    SGX_SDK_INSTALL_DIR=$MOUNT_DIR/sgxsdk
+    source $SGX_SDK_INSTALL_DIR/environment
+    SGX_TOOLSET_DIR="$MOUNT_DIR/sgx/external/toolset/ubuntu20.04"
+    export MITIGATION_CFLAGS+=-B$SGX_TOOLSET_DIR
+}
+
+# -----------------------------------------------------------------------------
+
+# Install mbedtls
+install_mbedtls()
+{
+    require_not_empty "$MOUNT_DIR" $LINENO "MOUNT_DIR"
+
+    log "Installing mbedtls"
+    MBED_SOURCE_DIR=$MOUNT_DIR/mbedtls-compat-sgx
+    MBED_BUILD_DIR=$MBED_SOURCE_DIR/build
+    mkdir_safe $MBED_BUILD_DIR
+
+    pushd $MBED_BUILD_DIR
+    cmake ..
+    make && make install
+    popd
+
+    log "Verifing mbedtls intallation"
+    MBED_BUILD_RESULTS_DIR=$MBED_BUILD_DIR/mbedtls_SGX-2.24.0/
+    if [ ! -d $MBED_BUILD_RESULTS_DIR ]; then
+        error_and_exit $LINENO "Directory not found: ${MBED_BUILD_RESULTS_DIR}"
+    fi
+}
+
+# -----------------------------------------------------------------------------
+
+# Install the SILENT DATA enclave
+install_enclave()
+{
+    require_not_empty "$MOUNT_DIR" $LINENO "MOUNT_DIR"
+    require_not_empty "$MBED_BUILD_RESULTS_DIR" $LINENO "MBED_BUILD_RESULTS_DIR"
+
+    log "Installing SILENT DATA enclave"
+    ENCLAVE_SOURCE_DIR=$MOUNT_DIR/silentdata-defi-enclave
+    ENCLAVE_BUILD_DIR=$ENCLAVE_SOURCE_DIR/build
+    mkdir_safe $ENCLAVE_BUILD_DIR
+
+    pushd $ENCLAVE_BUILD_DIR
+    cmake -DBUILD_TYPE=Deploy -DMBED_DIR=$MBED_BUILD_RESULTS_DIR ..
+    make -j
+    make install
+    popd
+}
+
+# -----------------------------------------------------------------------------
+
+# Copy the installation files to the output directory
+copy_output()
+{
+    require_not_empty "$MOUNT_DIR" $LINENO "MOUNT_DIR"
+    require_not_empty "$ENCLAVE_BUILD_DIR" $LINENO "ENCLAVE_BUILD_DIR"
+
+    log "Copying output files"
+    OUTPUT_DIR=$MOUNT_DIR/out
+    mkdir_safe $OUTPUT_DIR
+
+    cp -r $ENCLAVE_BUILD_DIR/install/* $OUTPUT_DIR
+}
+
+# -----------------------------------------------------------------------------
+
+# Sign the enclave with the test private key
+sign_enclave()
+{
+    require_not_empty "$OUTPUT_DIR" $LINENO "OUTPUT_DIR"
+    require_not_empty "$ENCLAVE_SOURCE_DIR" $LINENO "ENCLAVE_SOURCE_DIR"
+
+    log "Signing enclave with test key"
+    ENCLAVE_OUTPUT_DIR=$OUTPUT_DIR/worker_enclave
+    ENCLAVE_SIGNED_OUTPUT=worker_enclave.signed.so
+    sgx_sign sign -enclave $ENCLAVE_OUTPUT_DIR/libworker_enclave.so \
+                  -config $ENCLAVE_SOURCE_DIR/enclave/worker/worker_enclave.config.xml \
+                  -out $ENCLAVE_OUTPUT_DIR/$ENCLAVE_SIGNED_OUTPUT \
+                  -key $ENCLAVE_SOURCE_DIR/enclave_private_test.pem
+}
+
+# -----------------------------------------------------------------------------
+
+# Dump the details of the signed enclave & extract the MRENCLAVE value
+print_mrenclave()
+{
+    require_not_empty "$ENCLAVE_OUTPUT_DIR" $LINENO "ENCLAVE_OUTPUT_DIR"
+    require_not_empty "$ENCLAVE_SIGNED_OUTPUT" $LINENO "ENCLAVE_SIGNED_OUTPUT"
+
+    log "Getting the MRENCLAVE from ${ENCLAVE_SIGNED_OUTPUT}"
+    sgx_sign dump -enclave $ENCLAVE_OUTPUT_DIR/$ENCLAVE_SIGNED_OUTPUT \
+                  -dumpfile $ENCLAVE_OUTPUT_DIR/sign_out.log
+
+    MRENCLAVE=$(grep -m 1 -A 2 "enclave_hash" $ENCLAVE_OUTPUT_DIR/sign_out.log | tail -n 2)
+    MRENCLAVE_FILE=$ENCLAVE_OUTPUT_DIR/MRENCLAVE_value.txt
+    echo $MRENCLAVE > $MRENCLAVE_FILE
+
+    log "MRENCLAVE written to $(basename $MRENCLAVE_FILE)"
+    log "$(cat $MRENCLAVE_FILE)"
+}
+
+# =============================================================================
+
+set -e
+
+MOUNT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+
+install_sgx_sdk
+install_mbedtls
+install_enclave
+copy_output
+sign_enclave
+print_mrenclave
+
+set +e

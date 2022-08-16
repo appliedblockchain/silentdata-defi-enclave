@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+import "messages.proto";
+
+message PlaidLinkTokenRequest {
+  APIConfig api_config = 1;
+  ClientInfo client_info = 2;
+  string client_user_id = 3;
+  string country = 4;
+}
+
+message CrossflowInvoiceCheckRequest {
+  APIConfig crossflow_api_config = 1;
+  ClientInfo client_info = 2;
+  WalletInfo wallet_info = 3;
+  string cf_request_id = 4;
+  uint64 minting_app_id = 5;
+}
+
+message MinimumBalanceCheckRequest {
+  APIConfig api_config = 1;
+  ClientInfo client_info = 2;
+  WalletInfo wallet_info = 3;
+  string currency_code = 4;
+  uint32 minimum_balance = 5;
+  bool business = 6;
+  AccountNumbers account_numbers = 7;
+}
+
+message ConsistentIncomeCheckRequest {
+  APIConfig api_config = 1;
+  ClientInfo client_info = 2;
+  WalletInfo wallet_info = 3;
+  string currency_code = 4;
+  uint32 consistent_income = 5;
+  bool stable = 6;
+  bool business = 7;
+  AccountNumbers account_numbers = 8;
+}
+
+message OnfidoKYCCheckRequest {
+  APIConfig api_config = 1;
+  ClientInfo client_info = 2;
+  WalletInfo wallet_info = 3;
+}
+
+message InstagramCheckRequest {
+  APIConfig api_config = 1;
+  ClientInfo client_info = 2;
+  WalletInfo wallet_info = 3;
+}

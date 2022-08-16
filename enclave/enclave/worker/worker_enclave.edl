@@ -1,0 +1,100 @@
+enclave {
+
+    // Include files
+    include "sgx_report.h"
+    include "sgx_tseal.h"
+    include "include/core_status_codes.h"
+    include "string.h"
+
+    // Import other edl files
+    from "mbedtls_SGX.edl" import *;
+    from "sgx_tstdc.edl" import sgx_oc_cpuidex;
+
+    // Data structure declarations to be used as parameters of the
+    // function prototypes in the edl
+    struct ProofResult {
+        uint8_t data[2000];
+        size_t data_size;
+        uint8_t signature[64];
+        uint8_t certificate_data[10000];
+        size_t certificate_data_size;
+    };
+
+    trusted {
+
+        public enum CoreStatusCode ecall_get_public_keys(
+            [out, size=64] uint8_t* encryption_public_key,
+            [out, size=32] uint8_t* ed25519_signing_public_key);
+
+        public enum CoreStatusCode ecall_get_sealed_keys(
+            uint32_t max_bytes,
+            [out, size=max_bytes] uint8_t* sealed_key_data,
+            [out] uint32_t* used_bytes);
+
+        public enum CoreStatusCode ecall_set_keys_from_sealed(
+            [in, size=sealed_size] uint8_t* sealed_key_data,
+            size_t sealed_size);
+
+        public enum CoreStatusCode ecall_get_report(
+            [in] sgx_target_info_t *p_qe_target,
+            [out] sgx_report_t *p_report);
+
+        public enum CoreStatusCode ecall_get_encrypted_keys(
+            [in] sgx_target_info_t *p_qe_target,
+            [in, string] const char* ias_report_body,
+            [in, string] const char* ias_report_cert_chain,
+            [in, size=384] const uint8_t* ias_report_signature,
+            [in, size=64] const uint8_t* encryption_public_key,
+            [in, size=32] const uint8_t* ed25519_signing_public_key,
+            uint32_t max_bytes,
+            [out, size=max_bytes] uint8_t* encrypted_key_data,
+            [out] uint32_t* used_bytes);
+
+        public enum CoreStatusCode ecall_set_keys_from_encrypted(
+            [in] sgx_target_info_t *p_qe_target,
+            [in, string] const char* ias_report_body,
+            [in, string] const char* ias_report_cert_chain,
+            [in, size=384] const uint8_t* ias_report_signature,
+            [in, size=64] const uint8_t* encryption_public_key,
+            [in, size=32] const uint8_t* ed25519_signing_public_key,
+            [in, size=encrypted_size] uint8_t* encrypted_key_data,
+            uint32_t encrypted_size);
+
+        // --------------------
+
+        public enum CoreStatusCode ecall_plaid_get_link_token(
+            [in, size=request_size] const uint8_t *request_bytes,
+            size_t request_size,
+            [out] struct ProofResult* proof_result);
+
+        public enum CoreStatusCode ecall_check_crossflow_invoice(
+            [in, size=request_size] const uint8_t *request_bytes,
+            size_t request_size,
+            [out] struct ProofResult* proof_result);
+
+        public enum CoreStatusCode ecall_minimum_balance_proof(
+            [in, size=request_size] const uint8_t *request_bytes,
+            size_t request_size,
+            [out] struct ProofResult* proof_result);
+
+        public enum CoreStatusCode ecall_consistent_income_proof(
+            [in, size=request_size] const uint8_t *request_bytes,
+            size_t request_size,
+            [out] struct ProofResult* proof_result);
+
+        public enum CoreStatusCode ecall_onfido_kyc_proof(
+            [in, size=request_size] const uint8_t *request_bytes,
+            size_t request_size,
+            [out] struct ProofResult* proof_result);
+
+        public enum CoreStatusCode ecall_instagram_proof(
+            [in, size=request_size] const uint8_t *request_bytes,
+            size_t request_size,
+            [out] struct ProofResult* proof_result);
+
+    };
+
+    untrusted {
+        void ocall_print_string([in, string] const char *str);
+    };
+};
