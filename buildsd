@@ -243,6 +243,9 @@ clone_enclave()
     git clone $ENCLAVE_SOURCE_REPO $ENCLAVE_SOURCE_DIR
     pushd $ENCLAVE_SOURCE_DIR
     git checkout $VERSION
+    mv enclave enclave_tmp
+    mv enclave_tmp/* .
+    rm -rf enclave_tmp
     popd
 }
 
