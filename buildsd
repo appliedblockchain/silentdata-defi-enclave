@@ -27,13 +27,13 @@ print_help()
     echo "        By default a new timestamped directory will be created"
     echo
     echo "EXAMPLES:"
-    echo "    ./build --help"
+    echo "    ./buildsd --help"
     echo "        Print this help message"
     echo
-    echo "    ./build --version my_tag"
+    echo "    ./buildsd --version my_tag"
     echo "        Build the version with tag \"my_tag\""
     echo
-    echo "    ./build --source enclave"
+    echo "    ./buildsd --source enclave"
     echo "        Build from the source code in the directory \"enclave\""
 }
 
@@ -97,7 +97,7 @@ validate_config()
 # 1. The file path
 expand_file_path()
 {
-    EXPANDED_DIR=$(readlink -f $1)
+    EXPANDED_DIR=$(cd $1 > /dev/null 2>&1 && pwd -P)
     if [ $? -ne 0 ]; then
         error_and_exit $LINENO "Error expanding path ${1}"\
                                "Please ensure this directory exists"
@@ -160,7 +160,7 @@ mkdir_safe()
 # Make a new source code directory structure for this version
 make_source_dirs()
 {
-    BASE_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+    BASE_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" > /dev/null 2>&1 && pwd )
     SCRIPTS_DIR=$BASE_DIR/scripts
 
     # Make a new output directory if not specified
@@ -263,17 +263,13 @@ copy_enclave()
 
 # -----------------------------------------------------------------------------
 
-# Build the builder image (if needed)
+# Build the builder image
 setup_builder_image()
 {
     ENCLAVE_BUILDER_IMAGE=silentdata-enclave-builder
-    log "Verifying ${ENCLAVE_BUILDER_IMAGE} image exists"
-    set +e && docker image inspect $ENCLAVE_BUILDER_IMAGE:latest > /dev/null 2>&1 && set -e
-    if [ $? != 0 ]; then
-        log "Building ${ENCLAVE_BUILDER_IMAGE} image"
-        require_not_empty "$SCRIPTS_DIR" $LINENO "SCRIPTS_DIR"
-        docker build -t $ENCLAVE_BUILDER_IMAGE -f $SCRIPTS_DIR/Dockerfile .
-    fi
+    log "Building ${ENCLAVE_BUILDER_IMAGE} image"
+    require_not_empty "$SCRIPTS_DIR" $LINENO "SCRIPTS_DIR"
+    docker build --no-cache -t $ENCLAVE_BUILDER_IMAGE -f $SCRIPTS_DIR/Dockerfile .
 }
 
 # -----------------------------------------------------------------------------
@@ -289,7 +285,8 @@ copy_scripts()
 
     MOUNT_DIR=/linux-sgx
     log "Setting MOUNT_DIR in \"start_build\" to ${MOUNT_DIR}"
-    sed -i "s|MOUNT_DIR|${MOUNT_DIR}|g" $OUTPUT_DIR/start_build
+    sed -i.bak "s|MOUNT_DIR|${MOUNT_DIR}|g" $OUTPUT_DIR/start_build
+    rm $OUTPUT_DIR/start_build.bak
 }
 
 # -----------------------------------------------------------------------------

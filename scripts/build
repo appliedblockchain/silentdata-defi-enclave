@@ -162,8 +162,7 @@ print_mrenclave()
 
     MRENCLAVE=$(grep -m 1 -A 2 "enclave_hash" $ENCLAVE_OUTPUT_DIR/sign_out.log | tail -n 2)
     MRENCLAVE_FILE=$ENCLAVE_OUTPUT_DIR/MRENCLAVE_value.txt
-    echo $MRENCLAVE > $MRENCLAVE_FILE
-
+    echo $MRENCLAVE | sed 's/0x//g' | sed 's/ //g' > $MRENCLAVE_FILE
     log "MRENCLAVE written to $(basename $MRENCLAVE_FILE)"
     log "$(cat $MRENCLAVE_FILE)"
 }
@@ -172,7 +171,7 @@ print_mrenclave()
 
 set -e
 
-MOUNT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+MOUNT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" > /dev/null 2>&1 && pwd )
 
 install_sgx_sdk
 install_mbedtls
