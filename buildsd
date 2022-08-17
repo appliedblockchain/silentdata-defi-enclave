@@ -22,6 +22,9 @@ print_help()
     echo "    -s, --source:"
     echo "        The path to the source code to build"
     echo
+    echo "    -c, --cmake:"
+    echo "        The path to the cmake files (optional)"
+    echo
     echo "    -o, --output:"
     echo "        The path to the output directory (optional)"
     echo "        By default a new timestamped directory will be created"
@@ -128,6 +131,11 @@ parse_config()
                 shift
                 require_not_empty "$1" $LINENO "source code directory"
                 SOURCE_CODE_DIR=$(expand_file_path $1)
+                ;;
+            -c | --cmake )
+                shift
+                require_not_empty "$1" $LINENO "cmake directory"
+                CMAKE_DIR=$(expand_file_path $1)
                 ;;
             -o | --output )
                 shift
@@ -259,6 +267,12 @@ copy_enclave()
 
     log "Copying source code from ${SOURCE_CODE_DIR}"
     rsync -a $SOURCE_CODE_DIR/* $ENCLAVE_SOURCE_DIR
+
+    if [ ! -z ${CMAKE_DIR} ]; then
+        log "Copying cmake files from ${CMAKE_DIR}"
+        mkdir_safe $ENCLAVE_SOURCE_DIR/cmake
+        rsync -a $CMAKE_DIR/Find{SGX,ProtoGen}.cmake $ENCLAVE_SOURCE_DIR/cmake
+    fi
 }
 
 # -----------------------------------------------------------------------------
