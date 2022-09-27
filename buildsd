@@ -205,15 +205,16 @@ clone_sgx()
     require_not_empty "$SGX_SOURCE_DIR" $LINENO "SGX_SOURCE_DIR"
 
     SGX_SOURCE_REPO=https://github.com/intel/linux-sgx.git
-    SGX_SOURCE_BRANCH=sgx_2.15_reproducible
+    SGX_SOURCE_BRANCH=sgx_reproducible
     log "Cloning ${SGX_SOURCE_REPO} with branch ${SGX_SOURCE_BRANCH}"
     git clone -b $SGX_SOURCE_BRANCH $SGX_SOURCE_REPO $SGX_SOURCE_DIR
     pushd $SGX_SOURCE_DIR
+    git checkout 1deb73848acc855efdacc0617a07fcd35ca044cc
     ./download_prebuilt.sh
     popd
 
-    SGX_SDK_INSTALLER=sgx_linux_x64_sdk_reproducible_2.15.100.1.bin
-    SGX_SDK_INSTALLER_BASE_URL=https://download.01.org/intel-sgx/sgx-linux/2.15/distro/nix_reproducibility
+    SGX_SDK_INSTALLER=sgx_linux_x64_sdk_reproducible_2.17.100.2.bin
+    SGX_SDK_INSTALLER_BASE_URL=https://download.01.org/intel-sgx/sgx-linux/2.17/distro/nix_reproducibility
     log "Downloading SDK installer ${SGX_SDK_INSTALLER} from ${SGX_SDK_INSTALLER_BASE_URL}"
     pushd $OUTPUT_DIR
     wget $SGX_SDK_INSTALLER_BASE_URL/$SGX_SDK_INSTALLER

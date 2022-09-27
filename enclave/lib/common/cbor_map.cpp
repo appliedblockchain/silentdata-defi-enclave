@@ -218,6 +218,8 @@ std::vector<uint8_t> CBORMap::encode_cbor(int max_size) const
     const size_t buffer_size = cbor_encoder_get_buffer_size(&encoder, encoded_data.data());
     encoded_data.resize(buffer_size);
 
+    DEBUG_HEX_LOG("CBOR encoded data", encoded_data.data(), encoded_data.size());
+
     return encoded_data;
 }
 

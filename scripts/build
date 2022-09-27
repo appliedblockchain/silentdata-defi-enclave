@@ -68,8 +68,11 @@ install_sgx_sdk()
     log "Setting up the environment for using the SGX SDK"
     SGX_SDK_INSTALL_DIR=$MOUNT_DIR/sgxsdk
     source $SGX_SDK_INSTALL_DIR/environment
-    SGX_TOOLSET_DIR="$MOUNT_DIR/sgx/external/toolset/ubuntu20.04"
-    export MITIGATION_CFLAGS+=-B$SGX_TOOLSET_DIR
+    SGX_TOOLSET_DIR="$MOUNT_DIR/sgx/external/toolset/nix"
+    export BINUTILS_DIR=$SGX_TOOLSET_DIR
+    export PATH=$SGX_TOOLSET_DIR:$PATH
+    sudo cp $SGX_TOOLSET_DIR/* /nix/store/cl1i6bfqnx48ipakj4px7pb1babzs23j-binutils-2.31.1/bin
+    sudo cp $SGX_TOOLSET_DIR/* /nix/store/89xaidnki140ilgdjppqw0lp77yqyc8n-1kl6ms8x56iyhylb2r83lq7j3jbnix7w-binutils-2.31.1/bin
 }
 
 # -----------------------------------------------------------------------------

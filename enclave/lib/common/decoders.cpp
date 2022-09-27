@@ -119,8 +119,8 @@ std::string hex_decode(const std::string &hex_string)
 std::array<uint8_t, CORE_SHA_512_256_LEN>
 hash_from_msgpack_transaction(const std::vector<uint8_t> &encoded_transaction)
 {
-    // Check first byte corresponds to map with 8 elements (0x88)
-    if (encoded_transaction.at(0) != 0x88)
+    // Check first byte corresponds to map with 7 elements (0x87)
+    if (encoded_transaction.at(0) != 0x87)
         THROW_EXCEPTION(kDecodingError, "Signed data not msgpack encoded dummy transaction");
     std::array<uint8_t, CORE_SHA_512_256_LEN> hash;
     size_t i = 1;

@@ -31,6 +31,7 @@
 #pragma GCC diagnostic ignored "-Wconversion"
 #pragma GCC diagnostic ignored "-Wredundant-decls"
 #pragma GCC diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic ignored "-Wshadow"
 #include "proto/messages.pb.h"
 #pragma GCC diagnostic pop
 
@@ -51,6 +52,7 @@ private:
     json::JSON default_request_body() const;
 
     Optional<std::string> parse_error_type(const HTTPSResponse &response) const;
+    std::string get_user_field(const std::string &field);
 
 public:
     InstagramClient(const std::string &hostname,
@@ -69,6 +71,8 @@ public:
 
     // Send a request to the Instagram API to get the username
     std::string get_username();
+    // Send a request to the Instagram API to get the account type
+    std::string get_account_type();
 };
 
 } // namespace enclave

@@ -14,6 +14,7 @@ enum CoreStatusCode
     kDecodingError = 9,
     kIntegerOverflow = 10,
     kUIntUnderflow = 11,
+    kOutputOverflow = 12,
     kSGXError = 100,
     kSGXBusy = 101,
     kSGXOutOfMemory = 102,

@@ -42,7 +42,8 @@ std::unique_ptr<BankClient> create_bank_client(const APIRequest *request)
                                 request->get_api_config(0),
                                 code,
                                 code_verifier,
-                                {request->get_allowed_certificate(hostname)}));
+                                {request->get_allowed_certificate("auth." + hostname),
+                                 request->get_allowed_certificate("api." + hostname)}));
     }
     else
     {
@@ -157,14 +158,6 @@ CheckResult process_balance_proof(const BalanceCheckRequestWrapper &request,
         return result;
     }
 
-    // Account holder name and institution name requests
-    std::string account_holder_name;
-    if (request.is_business_check())
-        account_holder_name = client->get_business_name(account_id);
-    else
-        account_holder_name = client->get_account_holder_name(account_id);
-    const std::string institution_name = client->get_institution_name();
-
     // Access (and public) token destruction request
     client->destroy_access();
 
@@ -179,8 +172,6 @@ CheckResult process_balance_proof(const BalanceCheckRequestWrapper &request,
                                                         request.get_server_timestamp(),
                                                         request.get_wallet_public_key(),
                                                         certificate_hash,
-                                                        account_holder_name,
-                                                        institution_name,
                                                         request.get_currency_code(),
                                                         request.get_minimum_balance(),
                                                         client->get_timestamp(),
@@ -243,14 +234,6 @@ CheckResult process_income_proof(const IncomeCheckRequestWrapper &request,
         return result;
     }
 
-    // Account holder name and institution name requests
-    std::string account_holder_name;
-    if (request.is_business_check())
-        account_holder_name = client->get_business_name(account_id);
-    else
-        account_holder_name = client->get_account_holder_name(account_id);
-    const std::string institution_name = client->get_institution_name();
-
     // Access (and public) token destruction request
     client->destroy_access();
 
@@ -267,8 +250,6 @@ CheckResult process_income_proof(const IncomeCheckRequestWrapper &request,
                                                         request.get_server_timestamp(),
                                                         request.get_wallet_public_key(),
                                                         certificate_hash,
-                                                        account_holder_name,
-                                                        institution_name,
                                                         request.get_currency_code(),
                                                         request.get_consistent_income(),
                                                         client->get_timestamp(),
@@ -393,8 +374,12 @@ CheckResult process_instagram_proof(const InstagramCheckRequestWrapper &request,
     // Exchange the auth code for an access token & get username
     CBORMap certificate_map;
     client.get_access();
+    // Access subdomain uses a different TLS certificate
     certificate_map.insert(client.server_address(), client.get_leaf_certificate());
+
     const std::string username = client.get_username();
+    const std::string account_type = client.get_account_type();
+    // Basic display subdomain uses a different TLS certificate
     certificate_map.insert(client.server_address(), client.get_leaf_certificate());
 
     result.certificate_data = certificate_map.encode_cbor(CORE_MAX_CERTIFICATE_LEN);
@@ -406,7 +391,8 @@ CheckResult process_instagram_proof(const InstagramCheckRequestWrapper &request,
                                                              request.get_server_timestamp(),
                                                              request.get_wallet_public_key(),
                                                              certificate_hash,
-                                                             username);
+                                                             username,
+                                                             account_type);
 
     // Sign the certificate data
     if (request.get_blockchain() == kAlgorand)

@@ -31,7 +31,7 @@ generate_proof_data(CBORMap &map,
         map.insert("certificate_hash", certificate_hash);
     }
 
-    return map.encode_cbor();
+    return map.encode_cbor(CORE_MAX_PROOF_LEN);
 }
 
 std::vector<uint8_t>
@@ -122,13 +122,15 @@ generate_instagram_proof_data(const std::string &proof_id,
                               int32_t timestamp,
                               const std::array<uint8_t, CORE_ED25519_KEY_LEN> &initiator_pkey,
                               const std::vector<uint8_t> &certificate_hash,
-                              const std::string &username)
+                              const std::string &username,
+                              const std::string &account_type)
 {
     const std::array<uint8_t, CORE_ID_HASH_LEN> check_hash = type_to_check_hash(kInstagramProof);
     DEBUG_HEX_LOG("Instagram check hash", check_hash.data(), check_hash.size());
 
     CBORMap map;
     map.insert("ig_username", username);
+    map.insert("ig_account_type", account_type);
 
     return generate_proof_data(
         map, check_hash, proof_id, timestamp, initiator_pkey, certificate_hash);
@@ -140,8 +142,6 @@ generate_bank_proof_data(ProofType type,
                          int32_t timestamp,
                          const std::array<uint8_t, CORE_ED25519_KEY_LEN> &initiator_pkey,
                          const std::vector<uint8_t> &certificate_hash,
-                         const std::string &account_holder_name,
-                         const std::string &institution_name,
                          const std::string &currency_code,
                          uint32_t comparison_value,
                          const std::string &server_timestamp,
@@ -159,8 +159,6 @@ generate_bank_proof_data(ProofType type,
     const std::array<uint8_t, CORE_ID_HASH_LEN> check_hash = type_to_check_hash(type);
 
     CBORMap map;
-    map.insert("account_holder_name", account_holder_name);
-    map.insert("institution_name", institution_name);
     map.insert("currency_code", currency_code);
     map.insert("comparison_value", comparison_value);
     map.insert("server_timestamp", server_timestamp);

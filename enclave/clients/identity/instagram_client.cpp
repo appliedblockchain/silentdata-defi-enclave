@@ -120,22 +120,27 @@ void InstagramClient::destroy_access()
     user_id_.clear();
 }
 
-std::string InstagramClient::get_username()
+std::string InstagramClient::get_user_field(const std::string &field)
 {
     if (access_token_.empty() || user_id_.empty())
         THROW_EXCEPTION(kInvalidInput,
-                        "Can't get username from Instagram as no acccess token is set. Please "
-                        "first call `get_access()`");
+                        "Can't get " + field +
+                            " from Instagram as no acccess token is set. Please "
+                            "first call `get_access()`");
 
     set_subdomain("graph");
 
-    const std::string url = "/" + user_id_ + "?access_token=" + access_token_ + "&fields=username";
+    const std::string url = "/" + user_id_ + "?access_token=" + access_token_ + "&fields=" + field;
     DEBUG_LOG("Sending GET request to Instagram");
     const HTTPSResponse response = get(url);
 
     const JSON data = parse_json(response);
-    return data.get("username").String();
+    return data.get(field).String();
 }
+
+std::string InstagramClient::get_username() { return get_user_field("username"); }
+
+std::string InstagramClient::get_account_type() { return get_user_field("account_type"); }
 
 } // namespace enclave
 } // namespace silentdata

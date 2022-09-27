@@ -10,6 +10,9 @@ APIRequest::APIRequest(const std::vector<APIConfig> &api_configs,
                        const EC256KeyPair &key_pair)
     : api_configs_(api_configs), client_info_(client_info), has_symmetric_key_(false)
 {
+    if (client_info.proof_id().size() != CORE_UUID_LEN)
+        THROW_EXCEPTION(kInvalidInput, "Proof ID is incorrect size");
+
     for (const auto &api_config : api_configs)
         api_clients_.push_back(api_config.client());
 

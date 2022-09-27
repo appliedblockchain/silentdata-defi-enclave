@@ -26,6 +26,7 @@ const std::map<CoreStatusCode, CoreStatusInfo> core_status_map = {
     {kDecodingError, {"DecodingError", "Error decoding string"}},
     {kIntegerOverflow, {"IntegerOverflow", "Integer value larger than MAX_SAFE_INTEGER"}},
     {kUIntUnderflow, {"UIntUnderflow", "Unsigned integer value less than 0"}},
+    {kOutputOverflow, {"UOutputOverflow", "Output is larger than the assigned buffer"}},
     {kSGXError, {"SGXError", "Unknown/uncategorised SGX error"}},
     {kSGXBusy, {"SGXBusy", "The enclave is busy, try again later"}},
     {kSGXOutOfMemory, {"SGXOutOfMemory", "The enclave is out of memory"}},

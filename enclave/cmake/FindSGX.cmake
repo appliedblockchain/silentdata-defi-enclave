@@ -25,6 +25,34 @@ set(SGX_ENCLAVE_SIGNER ${SGX_PATH}/bin/x64/sgx_sign)
 set(SGX_EDGER8R ${SGX_PATH}/bin/x64/sgx_edger8r)
 set(SGX_PROTOC ${SGX_PATH}/bin/x64/sgx_protoc)
 
+set(BINUTILS_DIR /usr/local/bin)
+
+if(DEFINED ENV{BINUTILS_DIR})
+    set(BINUTILS_DIR "$ENV{BINUTILS_DIR}")
+endif()
+
+set(MITIGATION_CFLAGS "-B${BINUTILS_DIR}")
+set(MITIGATION_LDFLAGS "-B${BINUTILS_DIR}")
+message(STATUS "BINUTILS_DIR=${BINUTILS_DIR}")
+
+set(NO_MITIGATION ${NO_MITIGATION} CACHE BOOL "ON to not mitigate LVI, OFF to mitigate.")
+
+if(NO_MITIGATION)
+    message(STATUS "NO_MITIGATION=ON. Building without LVI mitigation flags")
+    set(MITIGATION_CFLAGS "${MITIGATION_CFLAGS} -fcf-protection")
+    set(SGX_TRUSTED_LIBRARY_PATH ${SGX_PATH}/lib64)
+else()
+    message(STATUS "NO_MITIGATION=OFF. Building with LVI mitigation flags")
+    set(MITIGATION_CFLAGS "${MITIGATION_CFLAGS} -mindirect-branch-register -fcf-protection=none -mfunction-return=thunk-extern \
+                          -fno-plt -Wa,-mlfence-after-load=yes -Wa,-mlfence-before-indirect-branch=memory \
+                          -Wa,-mlfence-before-ret=shl")
+    set(SGX_TRUSTED_LIBRARY_PATH ${SGX_PATH}/lib64/cve_2020_0551_load)
+endif()
+
+message(STATUS "MITIGATION_CFLAGS=${MITIGATION_CFLAGS}")
+message(STATUS "MITIGATION_LDFLAGS=${MITIGATION_LDFLAGS}")
+message(STATUS "SGX_TRUSTED_LIBRARY_PATH=${SGX_TRUSTED_LIBRARY_PATH}")
+
 find_path(SGX_INCLUDE_DIR sgx.h "${SGX_PATH}/include" NO_DEFAULT_PATH)
 find_path(SGX_LIBRARY_DIR libsgx_urts.so "${SGX_LIBRARY_PATH}" NO_DEFAULT_PATH)
 
@@ -41,6 +69,7 @@ endif()
 if(SGX_FOUND)
     # Use the build type to set the defaults for SGX_HW and SGX_MODE
     set(BUILD_TYPE Develop CACHE STRING "Develop = Simulation + Debug; Deploy = Hardware + release.")
+
     if(BUILD_TYPE STREQUAL "Deploy")
         message(STATUS "BUILD_TYPE=Deploy. Deploy mode: SGX_HW=ON, SGX_MODE=Release, BUILD_TESTS=OFF")
         set(SGX_HW ON)
@@ -57,6 +86,7 @@ if(SGX_FOUND)
     set(SGX_HW ${SGX_HW} CACHE BOOL "ON to run SGX on hardware, OFF for simulation.")
     set(SGX_MODE ${SGX_MODE} CACHE STRING "SGX build mode: Debug; PreRelease; Release.")
     set(BUILD_TESTS ${BUILD_TESTS} CACHE BOOL "ON to build the test suite, OFF to not.")
+
     if(BUILD_TESTS)
         message(STATUS "BUILD_TESTS=ON. Building unit and integration test suite")
     else()
@@ -73,6 +103,7 @@ if(SGX_FOUND)
         set(SGX_TSVC_LIB sgx_tservice)
     else()
         message(STATUS "SGX_HW=OFF. Building in simulation mode")
+        set(SGX_TRUSTED_LIBRARY_PATH "${SGX_LIBRARY_PATH}")
         set(SGX_URTS_LIB sgx_urts_sim)
         set(SGX_USVC_LIB sgx_uae_service_sim)
         set(SGX_EPID_LIB sgx_epid_sim)
@@ -84,13 +115,13 @@ if(SGX_FOUND)
 
     if(SGX_MODE STREQUAL "Debug")
         message(STATUS "SGX_MODE=Debug. Building in debug mode")
-        set(SGX_COMMON_CFLAGS "${SGX_COMMON_CFLAGS} -O0 -g -DDEBUG -UNDEBUG -UEDEBUG")
+        set(SGX_COMMON_CFLAGS "${SGX_COMMON_CFLAGS} -O0 -ggdb -DDEBUG -UNDEBUG -UEDEBUG")
     elseif(SGX_MODE STREQUAL "PreRelease")
         message(STATUS "SGX_MODE=PreRelease. Building in pre-release mode")
-        set(SGX_COMMON_CFLAGS "${SGX_COMMON_CFLAGS} -O2 -UDEBUG -DNDEBUG -DEDEBUG")
+        set(SGX_COMMON_CFLAGS "${SGX_COMMON_CFLAGS} -O2 -UDEBUG -DNDEBUG -D_FORTIFY_SOURCE=2 -DEDEBUG")
     elseif(SGX_MODE STREQUAL "Release")
         message(STATUS "SGX_MODE=Release. Building in release mode")
-        set(SGX_COMMON_CFLAGS "${SGX_COMMON_CFLAGS} -O2 -UDEBUG -DNDEBUG -UEDEBUG -DPRODUCTION_IAS")
+        set(SGX_COMMON_CFLAGS "${SGX_COMMON_CFLAGS} -O2 -UDEBUG -DNDEBUG -D_FORTIFY_SOURCE=2 -UEDEBUG -DPRODUCTION_IAS")
     else()
         message(FATAL_ERROR "SGX_MODE ${SGX_MODE} is not Debug, PreRelease or Release.")
     endif()
@@ -100,6 +131,7 @@ if(SGX_FOUND)
 					       -Waddress -Wsequence-point -Wformat-security \
 					       -Wmissing-include-dirs -Wfloat-equal -Wshadow \
                            -Wcast-align -Wconversion -Wredundant-decls")
+
     # Warnings specific to C and C++
     set(SGX_WARNING_CFLAGS "-Wjump-misses-init -Wstrict-prototypes -Wunsuffixed-float-constants")
     set(SGX_WARNING_CXXFLAGS "-Wnon-virtual-dtor -std=c++11")
@@ -109,8 +141,8 @@ if(SGX_FOUND)
     # Enclave compilation flags
     set(ENCLAVE_INC_DIRS "${SGX_INCLUDE_DIR}" "${SGX_TLIBC_INCLUDE_DIR}" "${SGX_LIBCXX_INCLUDE_DIR}" "${SGX_INCLUDE_DIR}/tprotobuf")
     set(ENCLAVE_COMMON_FLAGS "${SGX_COMMON_CFLAGS} ${SGX_WARNING_FLAGS} -nostdinc -fvisibility=hidden -fpie -fstack-protector-strong -ffunction-sections -fdata-sections -DPB_ENABLE_SGX")
-    set(ENCLAVE_C_FLAGS "${ENCLAVE_COMMON_FLAGS} ${SGX_WARNING_CFLAGS}")
-    set(ENCLAVE_CXX_FLAGS "${ENCLAVE_COMMON_FLAGS} ${SGX_WARNING_CXXFLAGS} -nostdinc++")
+    set(ENCLAVE_C_FLAGS "${ENCLAVE_COMMON_FLAGS} ${SGX_WARNING_CFLAGS} ${MITIGATION_CFLAGS}")
+    set(ENCLAVE_CXX_FLAGS "${ENCLAVE_COMMON_FLAGS} ${SGX_WARNING_CXXFLAGS} -nostdinc++ ${MITIGATION_CFLAGS}")
 
     # Untrusted executable compilation flags
     set(APP_INC_DIRS "${SGX_PATH}/include")
@@ -123,19 +155,23 @@ if(SGX_FOUND)
         get_filename_component(EDL_ABSPATH ${edl} ABSOLUTE)
         set(EDL_T_C "${CMAKE_CURRENT_BINARY_DIR}/${EDL_NAME}_t.c")
         set(SEARCH_PATHS "")
+
         foreach(path ${edl_search_paths})
             get_filename_component(ABSPATH ${path} ABSOLUTE)
             list(APPEND SEARCH_PATHS "${ABSPATH}")
         endforeach()
+
         list(APPEND SEARCH_PATHS "${SGX_PATH}/include")
         string(REPLACE ";" ":" SEARCH_PATHS "${SEARCH_PATHS}")
+
         if(${use_prefix})
             set(USE_PREFIX "--use-prefix")
         endif()
+
         add_custom_command(OUTPUT ${EDL_T_C}
-                           COMMAND ${SGX_EDGER8R} ${USE_PREFIX} --trusted ${EDL_ABSPATH} --search-path ${SEARCH_PATHS}
-                           MAIN_DEPENDENCY ${EDL_ABSPATH}
-                           WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+            COMMAND ${SGX_EDGER8R} ${USE_PREFIX} --trusted ${EDL_ABSPATH} --search-path ${SEARCH_PATHS}
+            MAIN_DEPENDENCY ${EDL_ABSPATH}
+            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
         add_library(${target}-edlobj OBJECT ${EDL_T_C})
         set_target_properties(${target}-edlobj PROPERTIES COMPILE_FLAGS ${ENCLAVE_C_FLAGS})
@@ -150,10 +186,12 @@ if(SGX_FOUND)
         set(oneValueArgs EDL LDSCRIPT)
         set(multiValueArgs SRCS EDL_SEARCH_PATHS LIBS LIB_PATHS)
         cmake_parse_arguments("SGX" "${optionArgs}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
         if(NOT "${SGX_LDSCRIPT}" STREQUAL "")
             get_filename_component(LDS_ABSPATH ${SGX_LDSCRIPT} ABSOLUTE)
             set(LDSCRIPT_FLAG "-Wl,--version-script=${LDS_ABSPATH}")
         endif()
+
         if("${SGX_EDL}" STREQUAL "")
             message("${target}: SGX enclave edl file is not provided; skipping edger8r")
             add_library(${target} STATIC ${SGX_SRCS})
@@ -161,25 +199,28 @@ if(SGX_FOUND)
             if("${SGX_EDL_SEARCH_PATHS}" STREQUAL "")
                 message("${target}: SGX enclave edl file search paths are not provided!")
             endif()
+
             _build_edl_obj(${SGX_EDL} "${SGX_EDL_SEARCH_PATHS}" ${SGX_USE_PREFIX})
             add_library(${target} STATIC ${SGX_SRCS} $<TARGET_OBJECTS:${target}-edlobj>)
         endif()
-        
+
         set_target_properties(${target} PROPERTIES COMPILE_FLAGS ${ENCLAVE_CXX_FLAGS})
         target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${ENCLAVE_INC_DIRS})
 
         set(EXTRA_LIB_PATHS "")
+
         foreach(EXLIBPATH ${SGX_LIB_PATHS})
             list(APPEND EXTRA_LIB_PATHS "-L${EXLIBPATH}")
         endforeach()
 
         set(EXTRA_LIBS "")
+
         foreach(EXLIB ${SGX_LIBS})
             list(APPEND EXTRA_LIBS "-l${EXLIB}")
         endforeach()
 
-        target_link_libraries(${target} "${SGX_COMMON_CFLAGS} ${SGX_SECURITY_FLAGS} \
-            -Wl,--no-undefined -nostdlib -nodefaultlibs -nostartfiles -L${SGX_LIBRARY_PATH} ${EXTRA_LIB_PATHS} \
+        target_link_libraries(${target} "${SGX_COMMON_CFLAGS} ${MITIGATION_LDFLAGS} ${SGX_SECURITY_FLAGS} \
+            -Wl,--no-undefined -nostdlib -nodefaultlibs -nostartfiles -L${SGX_TRUSTED_LIBRARY_PATH} ${EXTRA_LIB_PATHS} \
             -Wl,--start-group ${EXTRA_LIBS} -lsgx_tstdc -lsgx_tcxx -lsgx_tkey_exchange -lsgx_tcrypto -lsgx_protobuf -l${SGX_TSVC_LIB} -Wl,--end-group \
             -Wl,-Bstatic -Wl,-Bsymbolic -Wl,--no-undefined \
             -Wl,-pie,-eenclave_entry -Wl,--export-dynamic \
@@ -193,12 +234,15 @@ if(SGX_FOUND)
         set(oneValueArgs EDL LDSCRIPT)
         set(multiValueArgs SRCS TRUSTED_LIBS EDL_SEARCH_PATHS LIB_PATHS LIBS)
         cmake_parse_arguments("SGX" "${optionArgs}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
         if("${SGX_EDL}" STREQUAL "")
             message(FATAL_ERROR "${target}: SGX enclave edl file is not provided!")
         endif()
+
         if("${SGX_EDL_SEARCH_PATHS}" STREQUAL "")
             message("${target}: SGX enclave edl file search paths are not provided!")
         endif()
+
         if(NOT "${SGX_LDSCRIPT}" STREQUAL "")
             get_filename_component(LDS_ABSPATH ${SGX_LDSCRIPT} ABSOLUTE)
             set(LDSCRIPT_FLAG "-Wl,--version-script=${LDS_ABSPATH}")
@@ -211,23 +255,26 @@ if(SGX_FOUND)
         target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${ENCLAVE_INC_DIRS})
 
         set(TLIB_LIST "")
+
         foreach(TLIB ${SGX_TRUSTED_LIBS})
             string(APPEND TLIB_LIST "$<TARGET_FILE:${TLIB}> ")
             add_dependencies(${target} ${TLIB})
         endforeach()
 
         set(EXTRA_LIB_PATHS "")
+
         foreach(EXLIBPATH ${SGX_LIB_PATHS})
             list(APPEND EXTRA_LIB_PATHS "-L${EXLIBPATH}")
         endforeach()
 
         set(EXTRA_LIBS "")
+
         foreach(EXLIB ${SGX_LIBS})
             list(APPEND EXTRA_LIBS "-l${EXLIB}")
         endforeach()
 
-        target_link_libraries(${target} "${SGX_COMMON_CFLAGS} ${SGX_SECURITY_FLAGS}\
-            -Wl,--no-undefined -nostdlib -nodefaultlibs -nostartfiles -L${SGX_LIBRARY_PATH} ${EXTRA_LIB_PATHS}\
+        target_link_libraries(${target} "${SGX_COMMON_CFLAGS} ${MITIGATION_LDFLAGS} ${SGX_SECURITY_FLAGS}\
+            -Wl,--no-undefined -nostdlib -nodefaultlibs -nostartfiles -L${SGX_TRUSTED_LIBRARY_PATH} ${EXTRA_LIB_PATHS}\
             -Wl,--whole-archive -l${SGX_TRTS_LIB} -Wl,--no-whole-archive \
             -Wl,--start-group ${TLIB_LIST} ${EXTRA_LIBS} -lsgx_tstdc -lsgx_tcxx -lsgx_tkey_exchange -lsgx_tcrypto -lsgx_protobuf -l${SGX_TSVC_LIB} -Wl,--end-group \
             -Wl,-Bstatic -Wl,-Bsymbolic -Wl,--no-undefined \
@@ -242,46 +289,51 @@ if(SGX_FOUND)
         set(optionArgs IGNORE_INIT IGNORE_REL)
         set(oneValueArgs KEY CONFIG OUTPUT)
         cmake_parse_arguments("SGX" "${optionArgs}" "${oneValueArgs}" "" ${ARGN})
+
         if("${SGX_CONFIG}" STREQUAL "")
             message("${target}: SGX enclave config is not provided!")
         else()
             get_filename_component(CONFIG_ABSPATH ${SGX_CONFIG} ABSOLUTE)
         endif()
+
         if("${SGX_KEY}" STREQUAL "")
-            if (NOT SGX_HW OR NOT SGX_MODE STREQUAL "Release")
+            if(NOT SGX_HW OR NOT SGX_MODE STREQUAL "Release")
                 message(FATAL_ERROR "${target}: Private key used to sign enclave is not provided!")
             endif()
         else()
             get_filename_component(KEY_ABSPATH ${SGX_KEY} ABSOLUTE)
         endif()
+
         if("${SGX_OUTPUT}" STREQUAL "")
             set(OUTPUT_NAME "${target}.signed.so")
         else()
             set(OUTPUT_NAME ${SGX_OUTPUT})
         endif()
-	if(${SGX_IGNORE_INIT})
-	    set(IGN_INIT "-ignore-init-sec-error")
-	endif()
-	if(${SGX_IGNORE_REL})
-	    set(IGN_REL "-ignore-rel-error")
-	endif()
+
+        if(${SGX_IGNORE_INIT})
+            set(IGN_INIT "-ignore-init-sec-error")
+        endif()
+
+        if(${SGX_IGNORE_REL})
+            set(IGN_REL "-ignore-rel-error")
+        endif()
 
         if(SGX_HW AND SGX_MODE STREQUAL "Release")
             add_custom_target(${target}-sign ALL
-                              COMMAND ${SGX_ENCLAVE_SIGNER} gendata
-                                      $<$<NOT:$<STREQUAL:${SGX_CONFIG},>>:-config> $<$<NOT:$<STREQUAL:${SGX_CONFIG},>>:${CONFIG_ABSPATH}>
-                                      -enclave $<TARGET_FILE:${target}> -out $<TARGET_FILE_DIR:${target}>/${target}_hash.hex ${IGN_INIT} ${IGN_REL}
-                              COMMAND ${CMAKE_COMMAND} -E cmake_echo_color
-                                  --cyan "SGX production enclave first step signing finished, \
+                COMMAND ${SGX_ENCLAVE_SIGNER} gendata
+                $<$<NOT:$<STREQUAL:${SGX_CONFIG},>>:-config> $<$<NOT:$<STREQUAL:${SGX_CONFIG},>>:${CONFIG_ABSPATH}>
+                -enclave $<TARGET_FILE:${target}> -out $<TARGET_FILE_DIR:${target}>/${target}_hash.hex ${IGN_INIT} ${IGN_REL}
+                COMMAND ${CMAKE_COMMAND} -E cmake_echo_color
+                --cyan "SGX production enclave first step signing finished, \
     use ${CMAKE_CURRENT_BINARY_DIR}/${target}_hash.hex for second step"
-                              WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+                WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
         else()
             add_custom_target(${target}-sign ALL ${SGX_ENCLAVE_SIGNER} sign -key ${KEY_ABSPATH}
-                              $<$<NOT:$<STREQUAL:${SGX_CONFIG},>>:-config> $<$<NOT:$<STREQUAL:${SGX_CONFIG},>>:${CONFIG_ABSPATH}>
-                              -enclave $<TARGET_FILE:${target}>
-                              -out $<TARGET_FILE_DIR:${target}>/${OUTPUT_NAME}
-			      ${IGN_INIT} ${IGN_REL}
-                              WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+                $<$<NOT:$<STREQUAL:${SGX_CONFIG},>>:-config> $<$<NOT:$<STREQUAL:${SGX_CONFIG},>>:${CONFIG_ABSPATH}>
+                -enclave $<TARGET_FILE:${target}>
+                -out $<TARGET_FILE_DIR:${target}>/${OUTPUT_NAME}
+                ${IGN_INIT} ${IGN_REL}
+                WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
         endif()
 
         set(CLEAN_FILES "$<TARGET_FILE_DIR:${target}>/${OUTPUT_NAME};$<TARGET_FILE_DIR:${target}>/${target}_hash.hex")
@@ -292,32 +344,39 @@ if(SGX_FOUND)
         set(optionArgs USE_PREFIX)
         set(multiValueArgs SRCS EDL EDL_SEARCH_PATHS)
         cmake_parse_arguments("SGX" "${optionArgs}" "" "${multiValueArgs}" ${ARGN})
+
         if("${SGX_EDL}" STREQUAL "")
             message(FATAL_ERROR "${target}: SGX enclave edl file is not provided!")
         endif()
+
         if("${SGX_EDL_SEARCH_PATHS}" STREQUAL "")
             message("${target}: SGX enclave edl file search paths are not provided!")
         endif()
 
         set(EDL_U_SRCS "")
+
         foreach(EDL ${SGX_EDL})
             get_filename_component(EDL_NAME ${EDL} NAME_WE)
             get_filename_component(EDL_ABSPATH ${EDL} ABSOLUTE)
             set(EDL_U_C "${CMAKE_CURRENT_BINARY_DIR}/${EDL_NAME}_u.c")
             set(SEARCH_PATHS "")
+
             foreach(path ${SGX_EDL_SEARCH_PATHS})
                 get_filename_component(ABSPATH ${path} ABSOLUTE)
                 list(APPEND SEARCH_PATHS "${ABSPATH}")
             endforeach()
+
             list(APPEND SEARCH_PATHS "${SGX_PATH}/include")
             string(REPLACE ";" ":" SEARCH_PATHS "${SEARCH_PATHS}")
+
             if(${SGX_USE_PREFIX})
                 set(USE_PREFIX "--use-prefix")
             endif()
+
             add_custom_command(OUTPUT ${EDL_U_C}
-                               COMMAND ${SGX_EDGER8R} ${USE_PREFIX} --untrusted ${EDL_ABSPATH} --search-path ${SEARCH_PATHS}
-                               MAIN_DEPENDENCY ${EDL_ABSPATH}
-                               WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+                COMMAND ${SGX_EDGER8R} ${USE_PREFIX} --untrusted ${EDL_ABSPATH} --search-path ${SEARCH_PATHS}
+                MAIN_DEPENDENCY ${EDL_ABSPATH}
+                WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
             add_library(${target}-edluobj OBJECT ${EDL_U_C})
             set_target_properties(${target}-edluobj PROPERTIES COMPILE_FLAGS ${APP_C_FLAGS})
 
@@ -344,33 +403,40 @@ if(SGX_FOUND)
         set(optionArgs USE_PREFIX)
         set(multiValueArgs SRCS EDL EDL_SEARCH_PATHS LIB_PATHS LIBS)
         cmake_parse_arguments("SGX" "${optionArgs}" "" "${multiValueArgs}" ${ARGN})
+
         if("${SGX_EDL}" STREQUAL "")
             message(FATAL_ERROR "${target}: SGX enclave edl file is not provided!")
         endif()
+
         if("${SGX_EDL_SEARCH_PATHS}" STREQUAL "")
             message("${target}: SGX enclave edl file search paths are not provided!")
         endif()
 
         set(EDL_U_SRCS "")
+
         foreach(EDL ${SGX_EDL})
             get_filename_component(EDL_NAME ${EDL} NAME_WE)
             get_filename_component(EDL_ABSPATH ${EDL} ABSOLUTE)
             set(EDL_U_C "${CMAKE_CURRENT_BINARY_DIR}/${EDL_NAME}_u.c")
             set(EDL_U_H "${CMAKE_CURRENT_BINARY_DIR}/${EDL_NAME}_u.h")
             set(SEARCH_PATHS "")
+
             foreach(path ${SGX_EDL_SEARCH_PATHS})
                 get_filename_component(ABSPATH ${path} ABSOLUTE)
                 list(APPEND SEARCH_PATHS "${ABSPATH}")
             endforeach()
+
             list(APPEND SEARCH_PATHS "${SGX_PATH}/include")
             string(REPLACE ";" ":" SEARCH_PATHS "${SEARCH_PATHS}")
+
             if(${SGX_USE_PREFIX})
                 set(USE_PREFIX "--use-prefix")
             endif()
+
             add_custom_command(OUTPUT ${EDL_U_C}
-                               COMMAND ${SGX_EDGER8R} ${USE_PREFIX} --untrusted ${EDL_ABSPATH} --search-path ${SEARCH_PATHS}
-                               MAIN_DEPENDENCY ${EDL_ABSPATH}
-                               WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+                COMMAND ${SGX_EDGER8R} ${USE_PREFIX} --untrusted ${EDL_ABSPATH} --search-path ${SEARCH_PATHS}
+                MAIN_DEPENDENCY ${EDL_ABSPATH}
+                WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
             add_library(${target}-${EDL_NAME}-edluobj OBJECT ${EDL_U_C})
             set_target_properties(${target}-${EDL_NAME}-edluobj PROPERTIES COMPILE_FLAGS ${APP_C_FLAGS})
 
@@ -379,11 +445,13 @@ if(SGX_FOUND)
         endforeach()
 
         set(EXTRA_LIB_PATHS "")
+
         foreach(EXLIBPATH ${SGX_LIB_PATHS})
             list(APPEND EXTRA_LIB_PATHS "-L${EXLIBPATH}")
         endforeach()
 
         set(EXTRA_LIBS "")
+
         foreach(EXLIB ${SGX_LIBS})
             list(APPEND EXTRA_LIBS "-l${EXLIB}")
         endforeach()
@@ -407,29 +475,29 @@ if(SGX_FOUND)
 
     function(sign_and_install target)
         if(SGX_HW AND SGX_MODE STREQUAL "Release")
-        message(STATUS "${target} DisableDebug = 1")
-        enclave_sign(${target}
-                     KEY ${ENCLAVE_TEST_KEY}
-                     CONFIG "${target}.config.xml"
-                     OUTPUT "${target}.signed.so")
+            message(STATUS "${target} DisableDebug = 1")
+            enclave_sign(${target}
+                KEY ${ENCLAVE_TEST_KEY}
+                CONFIG "${target}.config.xml"
+                OUTPUT "${target}.signed.so")
         else()
-        message(STATUS "${target} DisableDebug = 0")
-        enclave_sign(${target}
-                     KEY ${ENCLAVE_TEST_KEY}
-                     CONFIG "${target}_debug.config.xml"
-                     OUTPUT "${target}.signed.so")
+            message(STATUS "${target} DisableDebug = 0")
+            enclave_sign(${target}
+                KEY ${ENCLAVE_TEST_KEY}
+                CONFIG "${target}_debug.config.xml"
+                OUTPUT "${target}.signed.so")
         endif()
 
         install(TARGETS ${target}
-                DESTINATION ${target}
-                PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
+            DESTINATION ${target}
+            PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
 
         # In release mode the hash of the enclave code needs to be signed before producing the signed
         # enclave object
         if(SGX_HW AND SGX_MODE STREQUAL "Release")
             install(FILES "$<TARGET_FILE_DIR:${target}>/${target}_hash.hex"
-                    DESTINATION worker_enclave
-                    PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
+                DESTINATION worker_enclave
+                PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
         else()
             install(FILES "$<TARGET_FILE_DIR:${target}>/${target}.signed.so"
                 DESTINATION worker_enclave
@@ -449,6 +517,7 @@ if(SGX_FOUND)
 
         set(${SRCS})
         set(${HDRS})
+
         foreach(FIL ${ARGN})
             get_filename_component(ABS_FIL ${FIL} ABSOLUTE)
             get_filename_component(FIL_WE ${FIL} NAME_WE)
@@ -457,13 +526,13 @@ if(SGX_FOUND)
             list(APPEND ${HDRS} "${CMAKE_CURRENT_BINARY_DIR}/${FIL_WE}.pb.h")
 
             add_custom_command(
-            OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${FIL_WE}.pb.cc"
-                    "${CMAKE_CURRENT_BINARY_DIR}/${FIL_WE}.pb.h"
-            COMMAND ${SGX_PROTOC}
-            ARGS --cpp_out ${CMAKE_CURRENT_BINARY_DIR} -I ${CMAKE_CURRENT_SOURCE_DIR} ${ABS_FIL}
-            DEPENDS ${ABS_FIL} ${SGX_PROTOC}
-            COMMENT "Running sgx C++ protocol buffer compiler on ${FIL}"
-            VERBATIM )
+                OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${FIL_WE}.pb.cc"
+                "${CMAKE_CURRENT_BINARY_DIR}/${FIL_WE}.pb.h"
+                COMMAND ${SGX_PROTOC}
+                ARGS --cpp_out ${CMAKE_CURRENT_BINARY_DIR} -I ${CMAKE_CURRENT_SOURCE_DIR} ${ABS_FIL}
+                DEPENDS ${ABS_FIL} ${SGX_PROTOC}
+                COMMENT "Running sgx C++ protocol buffer compiler on ${FIL}"
+                VERBATIM)
         endforeach()
 
         set_source_files_properties(${${SRCS}} ${${HDRS}} PROPERTIES GENERATED TRUE)
@@ -473,6 +542,7 @@ if(SGX_FOUND)
 
 else(SGX_FOUND)
     message(WARNING "Intel SGX SDK not found!")
+
     if(SGX_FIND_REQUIRED)
         message(FATAL_ERROR "Could NOT find Intel SGX SDK!")
     endif()

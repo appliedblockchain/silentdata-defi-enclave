@@ -81,7 +81,7 @@ stdenvNoCC.mkDerivation { \n\
 
 #install the required software
 RUN touch .bash_profile \
-&& curl https://nixos.org/releases/nix/nix-2.2.1/install | sh \
+&& curl https://nixos.org/releases/nix/nix-2.3.10/install | sh \
 && . /home/user/.nix-profile/etc/profile.d/nix.sh \
 && nix-env -i /nix/store/raiq8qv61rc66arg3vzyfr9kw83s7dwv-autoconf-2.69 \
 && nix-env -i /nix/store/7bsq9c4z657hddv60hpks48ws699y0fc-automake-1.16.1 \

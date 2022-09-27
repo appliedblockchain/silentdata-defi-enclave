@@ -606,6 +606,8 @@ void HTTPSClient::send_request()
     unsigned char buffer[MBEDTLS_SSL_MAX_CONTENT_LEN + 1];
     int len = mbedtls_snprintf(
         reinterpret_cast<char *>(buffer), sizeof(buffer) - 1, request_start(), opt_.request_page);
+    if (len > MBEDTLS_SSL_MAX_CONTENT_LEN)
+        THROW_EXCEPTION(kOutputOverflow, "Request buffer too long");
 
     for (size_t i = 0; i < headers_.size(); i++)
     {
@@ -613,6 +615,8 @@ void HTTPSClient::send_request()
                                 sizeof(buffer) - 1 - len,
                                 "%s\r\n",
                                 headers_[i].c_str());
+        if (len > MBEDTLS_SSL_MAX_CONTENT_LEN)
+            THROW_EXCEPTION(kOutputOverflow, "Request buffer too long");
     }
 
     // Add body to request if there is one (assumes only POST requests have bodies)
@@ -620,6 +624,8 @@ void HTTPSClient::send_request()
     {
         THROW_EXCEPTION(kClientWriteError,
                         "Request body length is longer than the maximum content length");
+        if (len > MBEDTLS_SSL_MAX_CONTENT_LEN)
+            THROW_EXCEPTION(kOutputOverflow, "Request buffer too long");
     }
     if (strlen(request_body_) > 0)
     {
@@ -627,8 +633,12 @@ void HTTPSClient::send_request()
                                 sizeof(buffer) - 1 - len,
                                 "Content-Length: %zu\r\n\r\n",
                                 strlen(request_body_));
+        if (len > MBEDTLS_SSL_MAX_CONTENT_LEN)
+            THROW_EXCEPTION(kOutputOverflow, "Request buffer too long");
         len += mbedtls_snprintf(
             reinterpret_cast<char *>(buffer) + len, sizeof(buffer) - 1 - len, "%s", request_body_);
+        if (len > MBEDTLS_SSL_MAX_CONTENT_LEN)
+            THROW_EXCEPTION(kOutputOverflow, "Request buffer too long");
     }
 
     const int tail_len = static_cast<int>(strlen(request_end()));

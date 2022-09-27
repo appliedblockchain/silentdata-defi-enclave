@@ -23,8 +23,7 @@ message MinimumBalanceCheckRequest {
   WalletInfo wallet_info = 3;
   string currency_code = 4;
   uint32 minimum_balance = 5;
-  bool business = 6;
-  AccountNumbers account_numbers = 7;
+  AccountNumbers account_numbers = 6;
 }
 
 message ConsistentIncomeCheckRequest {
@@ -34,8 +33,7 @@ message ConsistentIncomeCheckRequest {
   string currency_code = 4;
   uint32 consistent_income = 5;
   bool stable = 6;
-  bool business = 7;
-  AccountNumbers account_numbers = 8;
+  AccountNumbers account_numbers = 7;
 }
 
 message OnfidoKYCCheckRequest {

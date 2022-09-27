@@ -99,7 +99,6 @@ public:
     bool match_account_numbers() const { return !(request_.account_numbers().ByteSizeLong() == 0); }
     const std::string &get_currency_code() const { return request_.currency_code(); }
     uint32_t get_minimum_balance() const { return request_.minimum_balance(); }
-    bool is_business_check() const { return request_.business(); }
 
 private:
     MinimumBalanceCheckRequest request_;
@@ -117,7 +116,6 @@ public:
     const std::string &get_currency_code() const { return request_.currency_code(); }
     uint32_t get_consistent_income() const { return request_.consistent_income(); }
     bool is_stable() const { return request_.stable(); }
-    bool is_business_check() const { return request_.business(); }
 
 private:
     ConsistentIncomeCheckRequest request_;

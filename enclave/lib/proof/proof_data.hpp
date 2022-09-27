@@ -54,7 +54,8 @@ generate_instagram_proof_data(const std::string &proof_id,
                               int32_t timestamp,
                               const std::array<uint8_t, CORE_ED25519_KEY_LEN> &initiator_pkey,
                               const std::vector<uint8_t> &certificate_hash,
-                              const std::string &username);
+                              const std::string &username,
+                              const std::string &account_type);
 
 std::vector<uint8_t>
 generate_bank_proof_data(ProofType type,
@@ -62,8 +63,6 @@ generate_bank_proof_data(ProofType type,
                          int32_t timestamp,
                          const std::array<uint8_t, CORE_ED25519_KEY_LEN> &initiator_pkey,
                          const std::vector<uint8_t> &certificate_hash,
-                         const std::string &account_holder_name,
-                         const std::string &institution_name,
                          const std::string &currency_code,
                          uint32_t comparison_value,
                          const std::string &server_timestamp,

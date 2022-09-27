@@ -425,6 +425,9 @@ CoreStatusCode ecall_plaid_get_link_token(const uint8_t *request_bytes,
         return kInvalidInput;
     }
 
+    std::memset(proof_result->data, 0, CORE_MAX_PROOF_LEN);
+    std::memset(proof_result->signature, 0, ED25519_SIG_LEN);
+
     std::vector<uint8_t> encrypted_link;
     try
     {
@@ -444,9 +447,8 @@ CoreStatusCode ecall_plaid_get_link_token(const uint8_t *request_bytes,
         return kUnknownError;
     }
 
-    std::memset(proof_result->data, 0, CORE_MAX_PROOF_LEN);
-    std::memset(proof_result->signature, 0, ED25519_SIG_LEN);
-
+    if (encrypted_link.size() > CORE_MAX_PROOF_LEN)
+        return kOutputOverflow;
     std::copy(encrypted_link.begin(), encrypted_link.end(), proof_result->data);
     proof_result->data_size = encrypted_link.size();
 
@@ -490,6 +492,8 @@ CoreStatusCode ecall_check_crossflow_invoice(const uint8_t *request_bytes,
         return result.status;
 
     // Write proof data to the output pointers
+    if (result.binary_proof_data.size() > CORE_MAX_PROOF_LEN)
+        return kOutputOverflow;
     std::copy(result.binary_proof_data.begin(), result.binary_proof_data.end(), proof_result->data);
     proof_result->data_size = result.binary_proof_data.size();
     memcpy(proof_result->signature, result.signature.data(), ED25519_SIG_LEN);
@@ -506,7 +510,6 @@ CoreStatusCode ecall_check_crossflow_invoice(const uint8_t *request_bytes,
 //         - currency_code = ISO 4217 code
 //         - minimum_balance = The value to check the balance against
 //         - contract = Include wallet signature in signed data rather than names
-//         - business = Try to get the business name from the API
 // Output: - proof_result = A struct containing proof data and signature
 CoreStatusCode ecall_minimum_balance_proof(const uint8_t *request_bytes,
                                            size_t request_size,
@@ -545,9 +548,13 @@ CoreStatusCode ecall_minimum_balance_proof(const uint8_t *request_bytes,
         return result.status;
 
     // Write proof data to the output pointers
+    if (result.binary_proof_data.size() > CORE_MAX_PROOF_LEN)
+        return kOutputOverflow;
     std::copy(result.binary_proof_data.begin(), result.binary_proof_data.end(), proof_result->data);
     proof_result->data_size = result.binary_proof_data.size();
     memcpy(proof_result->signature, result.signature.data(), ED25519_SIG_LEN);
+    if (result.certificate_data.size() > CORE_MAX_CERTIFICATE_LEN)
+        return kOutputOverflow;
     std::copy(result.certificate_data.begin(),
               result.certificate_data.end(),
               proof_result->certificate_data);
@@ -566,7 +573,6 @@ CoreStatusCode ecall_minimum_balance_proof(const uint8_t *request_bytes,
 //         - consistent_income = The value to check the income against
 //         - stable = Only include income from same source around the same time each month
 //         - contract = Include wallet signature in signed data rather than names
-//         - business = Try to get the business name from the API
 // Output: - proof_result = A struct containing proof data and signature
 CoreStatusCode ecall_consistent_income_proof(const uint8_t *request_bytes,
                                              size_t request_size,
@@ -605,9 +611,13 @@ CoreStatusCode ecall_consistent_income_proof(const uint8_t *request_bytes,
         return result.status;
 
     // Write proof data to the output pointers
+    if (result.binary_proof_data.size() > CORE_MAX_PROOF_LEN)
+        return kOutputOverflow;
     std::copy(result.binary_proof_data.begin(), result.binary_proof_data.end(), proof_result->data);
     proof_result->data_size = result.binary_proof_data.size();
     memcpy(proof_result->signature, result.signature.data(), ED25519_SIG_LEN);
+    if (result.certificate_data.size() > CORE_MAX_CERTIFICATE_LEN)
+        return kOutputOverflow;
     std::copy(result.certificate_data.begin(),
               result.certificate_data.end(),
               proof_result->certificate_data);
@@ -652,9 +662,13 @@ ecall_onfido_kyc_proof(const uint8_t *request_bytes, size_t request_size, ProofR
         return result.status;
 
     // Write proof data to the output pointers
+    if (result.binary_proof_data.size() > CORE_MAX_PROOF_LEN)
+        return kOutputOverflow;
     std::copy(result.binary_proof_data.begin(), result.binary_proof_data.end(), proof_result->data);
     proof_result->data_size = result.binary_proof_data.size();
     memcpy(proof_result->signature, result.signature.data(), ED25519_SIG_LEN);
+    if (result.certificate_data.size() > CORE_MAX_CERTIFICATE_LEN)
+        return kOutputOverflow;
     std::copy(result.certificate_data.begin(),
               result.certificate_data.end(),
               proof_result->certificate_data);
@@ -699,9 +713,13 @@ ecall_instagram_proof(const uint8_t *request_bytes, size_t request_size, ProofRe
         return result.status;
 
     // Write proof data to the output pointers
+    if (result.binary_proof_data.size() > CORE_MAX_PROOF_LEN)
+        return kOutputOverflow;
     std::copy(result.binary_proof_data.begin(), result.binary_proof_data.end(), proof_result->data);
     proof_result->data_size = result.binary_proof_data.size();
     memcpy(proof_result->signature, result.signature.data(), ED25519_SIG_LEN);
+    if (result.certificate_data.size() > CORE_MAX_CERTIFICATE_LEN)
+        return kOutputOverflow;
     std::copy(result.certificate_data.begin(),
               result.certificate_data.end(),
               proof_result->certificate_data);
