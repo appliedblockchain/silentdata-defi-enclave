@@ -14,21 +14,15 @@
 
 #include "include/core_status_codes.h"
 
-#include "lib/client/client_opt.h"
-#include "lib/client/https_client.hpp"
 #include "lib/client/https_response.hpp"
-#include "lib/common/date_time.hpp"
-#include "lib/common/enclave_exception.hpp"
-#include "lib/common/enclave_logger.hpp"
 #include "lib/common/json.hpp"
 #include "lib/common/optional.hpp"
-#include "lib/common/sgx_error_message.hpp"
-#include "lib/common/types.hpp"
 
 #include "clients/api_client/oauth_api_client.hpp"
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wconversion"
+#pragma GCC diagnostic ignored "-Wshadow"
 #pragma GCC diagnostic ignored "-Wredundant-decls"
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wshadow"

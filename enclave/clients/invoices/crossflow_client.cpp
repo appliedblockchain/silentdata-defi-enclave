@@ -2,6 +2,7 @@
 #include "clients/invoices/crossflow_certificate.h"
 
 #include "lib/common/date_time.hpp"
+#include "lib/common/decoders.hpp"
 
 using json::JSON;
 
@@ -97,6 +98,7 @@ CrossflowClient::get_invoice(const std::string &cf_request_id)
     const std::string credit_rating_key = "creditRating";
     const std::string interest_rate_key = "interestRate";
     const std::string tenor_key = "tenor";
+    const std::string destination_pubkey_key = "destinationPublicKey";
 
     const std::vector<std::string> keys = {buyer_key,
                                            buyer_id_key,
@@ -104,7 +106,8 @@ CrossflowClient::get_invoice(const std::string &cf_request_id)
                                            financeable_total_key,
                                            credit_rating_key,
                                            interest_rate_key,
-                                           tenor_key};
+                                           tenor_key,
+                                           destination_pubkey_key};
 
     const std::string error_message = "An error occured during GET request to Crossflow server:\n"
                                       "  - Endpoint: /invoices/" +
@@ -133,6 +136,13 @@ CrossflowClient::get_invoice(const std::string &cf_request_id)
         invoice.interest_rate = response_json.get(interest_rate_key).Number();
         invoice.tenor = static_cast<int>(response_json.get(tenor_key).Int());
         invoice.timestamp = tm_to_timestamp(http_date_to_tm(response.get_timestamp()));
+        const std::string destination_pubkey_str =
+            hex_decode(response_json.get(destination_pubkey_key).String());
+        if (destination_pubkey_str.size() != invoice.destination_pubkey.size())
+            THROW_EXCEPTION(kOutputOverflow, "Destination public key is the wrong size");
+        std::copy(destination_pubkey_str.begin(),
+                  destination_pubkey_str.end(),
+                  invoice.destination_pubkey.data());
     }
     catch (const EnclaveException &e)
     {

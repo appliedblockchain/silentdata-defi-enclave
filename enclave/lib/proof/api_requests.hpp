@@ -8,13 +8,7 @@
 #include <string>
 #include <vector>
 
-#include "include/core_constants.h"
-#include "include/core_status_codes.h"
-
-#include "clients/banking/plaid_client.hpp"
-
 #include "lib/common/cbor_map.hpp"
-#include "lib/common/types.hpp"
 #include "lib/crypto/aes_gcm_key.hpp"
 #include "lib/crypto/ec256_key_pair.hpp"
 

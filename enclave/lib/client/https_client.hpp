@@ -67,7 +67,6 @@
 #include "lib/client/https_response.hpp"
 #include "lib/client/response.h"
 #include "lib/common/date_time.hpp"
-#include "lib/common/enclave_exception.hpp"
 #include "lib/common/enclave_logger.hpp"
 
 namespace silentdata

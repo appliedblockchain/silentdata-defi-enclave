@@ -3,8 +3,6 @@
 
 #include <stddef.h>
 
-#include "compat.h"
-
 #if defined(HAVE_MEMSET_S)
 
 #include <string.h>

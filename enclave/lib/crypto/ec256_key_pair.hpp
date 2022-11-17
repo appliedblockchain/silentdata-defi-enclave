@@ -2,9 +2,6 @@
 
 #include <sgx_tcrypto.h>
 
-#include "include/core_constants.h"
-
-#include "lib/common/sgx_error_message.hpp"
 #include "lib/crypto/aes_gcm_key.hpp"
 
 namespace silentdata

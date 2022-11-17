@@ -75,10 +75,12 @@ void ed25519_genpub(uint8_t pub[ED25519_KEY_LEN], const uint8_t sec[ED25519_KEY_
  */
 static void sign(uint8_t sig[ED25519_SIG_LEN],
                  const uint8_t sec[ED25519_KEY_LEN],
-                 const uint8_t pub[ED25519_KEY_LEN],
                  const uint8_t *data,
                  size_t len)
 {
+    uint8_t pub[ED25519_KEY_LEN];
+    ed25519_genpub(pub, sec);
+
     struct sha512 hash;
     uint8_t h[SHA512_HASH_LENGTH];
 
@@ -119,12 +121,11 @@ static void sign(uint8_t sig[ED25519_SIG_LEN],
  */
 void ed25519_sign(uint8_t sig[ED25519_SIG_LEN],
                   const uint8_t sec[ED25519_KEY_LEN],
-                  const uint8_t pub[ED25519_KEY_LEN],
                   const uint8_t *data,
                   size_t len)
 {
-    sign(sig, sec, pub, data, len);
-    burnstack(4096);
+    sign(sig, sec, data, len);
+    burnstack(5120);
 }
 
 /*
@@ -257,11 +258,10 @@ void eddsa_genpub(uint8_t pub[32], const uint8_t sec[32])
  */
 void eddsa_sign(uint8_t sig[ED25519_SIG_LEN],
                 const uint8_t sec[ED25519_KEY_LEN],
-                const uint8_t pub[ED25519_KEY_LEN],
                 const uint8_t *data,
                 size_t len)
 {
-    sign(sig, sec, pub, data, len);
+    sign(sig, sec, data, len);
     burnstack(4096);
 }
 

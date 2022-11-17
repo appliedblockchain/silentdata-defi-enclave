@@ -42,8 +42,7 @@ void ED25519KeyPair::set_private_key(const std::array<uint8_t, ED25519_KEY_LEN> 
 std::array<uint8_t, ED25519_SIG_LEN> ED25519KeyPair::sign(const std::vector<uint8_t> &data) const
 {
     std::array<uint8_t, ED25519_SIG_LEN> signature{};
-    ed25519_sign(
-        signature.data(), private_key_.data(), public_key_.data(), data.data(), data.size());
+    ed25519_sign(signature.data(), private_key_.data(), data.data(), data.size());
     return signature;
 }
 

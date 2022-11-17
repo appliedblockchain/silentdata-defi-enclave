@@ -11,14 +11,9 @@
 #include <sgx_tcrypto.h>
 #include <sgx_trts.h>
 
-#include "include/core_constants.h"
-#include "include/core_status_codes.h"
 #include "include/proof_types.h"
 
-#include "lib/cbor/cbor.h"
 #include "lib/common/cbor_map.hpp"
-#include "lib/common/enclave_exception.hpp"
-#include "lib/common/enclave_logger.hpp"
 #include "lib/common/logicsig.hpp"
 #include "lib/crypto/hash.hpp"
 

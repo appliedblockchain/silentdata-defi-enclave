@@ -229,8 +229,8 @@ clone_mbedtls()
 {
     require_not_empty "$MBED_SOURCE_DIR" $LINENO "MBED_SOURCE_DIR"
 
-    MBED_SOURCE_REPO=https://github.com/ffosilva/mbedtls-compat-sgx.git
-    MBED_SOURCE_TAG=tags/2.24.0
+    MBED_SOURCE_REPO=https://github.com/appliedblockchain/mbedtls-compat-sgx.git
+    MBED_SOURCE_TAG=tags/2.28.1
     log "Cloning ${MBED_SOURCE_REPO} with tag ${MBED_SOURCE_TAG}"
     git clone $MBED_SOURCE_REPO --recursive $MBED_SOURCE_DIR
     pushd $MBED_SOURCE_DIR

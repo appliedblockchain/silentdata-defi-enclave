@@ -15,6 +15,7 @@ message ClientInfo {
   int32 client_timestamp = 3;
   bytes encrypted_input = 4;
   bytes allowed_certificates = 5;
+  bytes enclave_encryption_public_key = 6;
 }
 
 message AccountNumbers {

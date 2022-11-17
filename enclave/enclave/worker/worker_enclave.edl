@@ -24,7 +24,9 @@ enclave {
 
         public enum CoreStatusCode ecall_get_public_keys(
             [out, size=64] uint8_t* encryption_public_key,
-            [out, size=32] uint8_t* ed25519_signing_public_key);
+            [out, size=64] uint8_t* provision_public_key,
+            [out, size=32] uint8_t* ed25519_signing_public_key,
+            [out, size=64] uint8_t* encryption_public_key_signature);
 
         public enum CoreStatusCode ecall_get_sealed_keys(
             uint32_t max_bytes,
@@ -44,7 +46,7 @@ enclave {
             [in, string] const char* ias_report_body,
             [in, string] const char* ias_report_cert_chain,
             [in, size=384] const uint8_t* ias_report_signature,
-            [in, size=64] const uint8_t* encryption_public_key,
+            [in, size=64] const uint8_t* provision_public_key,
             [in, size=32] const uint8_t* ed25519_signing_public_key,
             uint32_t max_bytes,
             [out, size=max_bytes] uint8_t* encrypted_key_data,
@@ -55,7 +57,7 @@ enclave {
             [in, string] const char* ias_report_body,
             [in, string] const char* ias_report_cert_chain,
             [in, size=384] const uint8_t* ias_report_signature,
-            [in, size=64] const uint8_t* encryption_public_key,
+            [in, size=64] const uint8_t* provision_public_key,
             [in, size=32] const uint8_t* ed25519_signing_public_key,
             [in, size=encrypted_size] uint8_t* encrypted_key_data,
             uint32_t encrypted_size);

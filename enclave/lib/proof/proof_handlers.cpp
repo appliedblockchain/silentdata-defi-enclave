@@ -1,5 +1,4 @@
 #include "lib/proof/proof_handlers.hpp"
-#include "lib/proof/crossflow_public_key.hpp"
 
 using json::JSON;
 
@@ -7,6 +6,43 @@ namespace silentdata
 {
 namespace enclave
 {
+
+std::string get_plaid_host(const std::string &environment)
+{
+#ifdef NDEBUG
+    if (environment != "production")
+        THROW_EXCEPTION(kInvalidInput,
+                        "Plaid API config parameter \"environment\" can not be \"" + environment +
+                            "\". Only \"production\" is allowed.");
+#endif
+
+    if (environment != "production" && environment != "development" && environment != "sandbox")
+        THROW_EXCEPTION(kInvalidInput,
+                        "Plaid API config parameter \"environment\" can not be \"" + environment +
+                            "\". Only \"production\", \"development\" or \"sandbox\" are allowed.");
+
+    return environment + ".plaid.com";
+}
+
+std::string get_truelayer_host(const std::string &environment)
+{
+#ifdef NDEBUG
+    if (environment != "production")
+        THROW_EXCEPTION(kInvalidInput,
+                        "TrueLayer API config parameter \"environment\" can not be \"" +
+                            environment + "\". Only \"production\" is allowed.");
+#endif
+
+    if (environment != "production" && environment != "sandbox")
+        THROW_EXCEPTION(kInvalidInput,
+                        "TrueLayer API config parameter \"environment\" can not be \"" +
+                            environment + "\". Only \"production\" or \"sandbox\" are allowed.");
+
+    if (environment == "sandbox")
+        return "truelayer-sandbox.com";
+
+    return "truelayer.com";
+}
 
 std::unique_ptr<BankClient> create_bank_client(const APIRequest *request)
 {
@@ -18,7 +54,7 @@ std::unique_ptr<BankClient> create_bank_client(const APIRequest *request)
         const std::string public_token = decrypted_data.get("public_token").get_text_string_value();
 
         // Configure the Plaid options
-        const std::string hostname = request->get_api_config(0).environment() + ".plaid.com";
+        const std::string hostname = get_plaid_host(request->get_api_config(0).environment());
         client = std::unique_ptr<BankClient>(
             new PlaidClient(hostname,
                             request->get_api_config(0),
@@ -34,9 +70,7 @@ std::unique_ptr<BankClient> create_bank_client(const APIRequest *request)
             decrypted_data.get("code_verifier").get_text_string_value();
 
         // Configure the TrueLayer options
-        std::string hostname = "truelayer.com";
-        if (request->get_api_config(0).environment() == "sandbox")
-            hostname = "truelayer-sandbox.com";
+        const std::string hostname = get_truelayer_host(request->get_api_config(0).environment());
         client = std::unique_ptr<BankClient>(
             new TrueLayerClient(hostname,
                                 request->get_api_config(0),
@@ -101,7 +135,8 @@ CheckResult process_crossflow_invoice_proof(const CrossflowInvoiceCheckRequestWr
 
     const std::string message =
         invoice.buyer + std::to_string(invoice.buyer_id) + request.get_cf_request_id();
-    const std::vector<uint8_t> message_bytes = unicode_utf8_bytes_encode(message);
+    std::vector<uint8_t> message_bytes(message.size(), 0);
+    std::copy(message.begin(), message.end(), message_bytes.begin());
 
     std::array<uint8_t, CORE_SHA_256_LEN> invoice_id = Hash::get_SHA_256_digest(message_bytes);
 
@@ -111,7 +146,7 @@ CheckResult process_crossflow_invoice_proof(const CrossflowInvoiceCheckRequestWr
     result.binary_proof_data =
         generate_crossflow_invoice_proof_data(request.get_proof_id(),
                                               request.get_server_timestamp(),
-                                              CROSSFLOW_WALLET_PUBLIC_KEY,
+                                              invoice.destination_pubkey,
                                               {},
                                               invoice_id,
                                               request.get_minting_app_id(),
@@ -208,30 +243,66 @@ CheckResult process_income_proof(const IncomeCheckRequestWrapper &request,
         account_id = find_account(account_details, request.get_account_numbers());
     }
 
-    // Account income request
-    // Get a date range spanning the previous 3 full months
-    struct tm start_date = {};
-    struct tm end_date = {};
-    end_date = http_date_to_tm(client->get_timestamp());
-    start_date = subtract_tm_months(end_date, 3);
-    const std::vector<BankTransaction> transactions =
-        client->get_all_transactions(start_date, end_date, account_id);
+    // The number of months of historical transactions to check
+    const int num_months = 3;
 
-    // Do the proof check
-    if ((request.is_stable() && !check_stable_income(transactions,
-                                                     start_date,
-                                                     end_date,
-                                                     request.get_currency_code(),
-                                                     request.get_consistent_income())) ||
-        (!request.is_stable() && !check_consistent_income(transactions,
-                                                          start_date,
-                                                          end_date,
-                                                          request.get_currency_code(),
-                                                          request.get_consistent_income())))
+    // The number of days of tolerance to use for the stable income check
+    const int tolerance_days = 3;
+
+    const auto end_date = http_date_to_tm(client->get_timestamp());
+    const auto start_date = subtract_tm_months(end_date, num_months);
+
+    if (request.is_stable())
     {
-        WARNING_LOG("Consistent income requirements were not met");
-        result.status = kConsistentIncomeRequirementsNotMet;
-        return result;
+        // Request transactions from the start_date - 2*tolerance to the end_date
+        // Then process the period (start_date - tolerance) to (end_date - tolerance)
+
+        const auto tolerance_sec = tolerance_days * 24 * 60 * 60;
+        const auto start_date_with_tolerance =
+            timestamp_to_tm(tm_to_timestamp(start_date) - tolerance_sec);
+        const auto start_date_with_2_tolerance =
+            timestamp_to_tm(tm_to_timestamp(start_date) - 2 * tolerance_sec);
+        const auto end_date_with_tolerance =
+            timestamp_to_tm(tm_to_timestamp(end_date) - tolerance_sec);
+        const std::vector<BankTransaction> transactions =
+            client->get_all_transactions(start_date_with_2_tolerance, end_date, account_id);
+
+        // Verify the transactions are stable
+        if (!check_stable_income(transactions,
+                                 start_date_with_tolerance,
+                                 end_date_with_tolerance,
+                                 request.get_currency_code(),
+                                 tolerance_days,
+                                 request.get_consistent_income()))
+        {
+            WARNING_LOG("Stable income requirements were not met");
+            result.status = kConsistentIncomeRequirementsNotMet;
+            return result;
+        }
+    }
+    else
+    {
+        // Get the transactions in the last 3 full months (from the 1st of the month)
+        auto start_date_start_of_month = start_date;
+        start_date_start_of_month.tm_mday = 1;
+
+        auto end_date_start_of_month = end_date;
+        end_date_start_of_month.tm_mday = 1;
+
+        const std::vector<BankTransaction> transactions = client->get_all_transactions(
+            start_date_start_of_month, end_date_start_of_month, account_id);
+
+        // Verify the transactions are consistent
+        if (!check_consistent_income(transactions,
+                                     start_date_start_of_month,
+                                     end_date_start_of_month,
+                                     request.get_currency_code(),
+                                     request.get_consistent_income()))
+        {
+            WARNING_LOG("Consistent income requirements were not met");
+            result.status = kConsistentIncomeRequirementsNotMet;
+            return result;
+        }
     }
 
     // Access (and public) token destruction request
@@ -265,6 +336,35 @@ CheckResult process_income_proof(const IncomeCheckRequestWrapper &request,
     return result;
 }
 
+void validate_onfido_api_key(const std::string &api_key)
+{
+
+    std::vector<std::string> allowed_prefixes({"api_live"});
+#ifndef NDEBUG
+    allowed_prefixes.push_back("api_sandbox");
+#endif
+
+    std::string concatenated_prefixes = "";
+    bool has_valid_prefix = false;
+    for (const auto &allowed_prefix : allowed_prefixes)
+    {
+        const auto prefix = api_key.substr(0, allowed_prefix.size());
+        if (prefix == allowed_prefix)
+        {
+            has_valid_prefix = true;
+            break;
+        }
+
+        concatenated_prefixes +=
+            std::string(concatenated_prefixes.empty() ? "" : ", ") + "\"" + allowed_prefix + "\"";
+    }
+
+    if (!has_valid_prefix)
+        THROW_EXCEPTION(kInvalidInput,
+                        "Onfido API key has an invalid prefix. Please use one of: " +
+                            concatenated_prefixes);
+}
+
 CheckResult process_onfido_kyc_proof(const OnfidoKYCCheckRequestWrapper &request,
                                      const ED25519KeyPair &ed25519_signing_keys)
 {
@@ -284,6 +384,7 @@ CheckResult process_onfido_kyc_proof(const OnfidoKYCCheckRequestWrapper &request
     // Construct an Onfido client
     const auto &api_config = request.get_api_config(0);
     const auto api_key = api_config.secret();
+    validate_onfido_api_key(api_key);
     const std::string &onfido_hostname = "api.eu.onfido.com";
     OnfidoClient onfido_client(onfido_hostname,
                                api_key,
@@ -312,15 +413,14 @@ CheckResult process_onfido_kyc_proof(const OnfidoKYCCheckRequestWrapper &request
     const SubjectDetails subject_details = onfido_client.fetch_subject_details(applicant_id);
 
     // Ensure that the subject is at least 18 years old
-    const auto now = timestamp_to_tm(api_config.server_timestamp());
-    const auto dob = timestamp_to_tm(subject_details.date_of_birth);
-    if (now.tm_year - dob.tm_year < 18)
+    if (!check_minimum_age(api_config.server_timestamp(), subject_details.date_of_birth, 18))
         THROW_EXCEPTION(kInvalidInput, "Subject is under the age of 18");
 
     // Create a hash of the subject's name and their document ID to use as a subject ID
     const std::string message =
         subject_details.first_name + subject_details.last_name + subject_details.document_id;
-    const std::vector<uint8_t> message_bytes = unicode_utf8_bytes_encode(message);
+    std::vector<uint8_t> message_bytes(message.size(), 0);
+    std::copy(message.begin(), message.end(), message_bytes.begin());
 
     std::array<uint8_t, CORE_SHA_256_LEN> subject_id = Hash::get_SHA_256_digest(message_bytes);
 
@@ -377,9 +477,10 @@ CheckResult process_instagram_proof(const InstagramCheckRequestWrapper &request,
     // Access subdomain uses a different TLS certificate
     certificate_map.insert(client.server_address(), client.get_leaf_certificate());
 
+    // ATTN. get_username & get_account_type use a different server to get_access
+    // so need to store the certificate too
     const std::string username = client.get_username();
     const std::string account_type = client.get_account_type();
-    // Basic display subdomain uses a different TLS certificate
     certificate_map.insert(client.server_address(), client.get_leaf_certificate());
 
     result.certificate_data = certificate_map.encode_cbor(CORE_MAX_CERTIFICATE_LEN);

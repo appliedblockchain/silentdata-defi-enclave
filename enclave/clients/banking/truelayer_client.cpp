@@ -219,19 +219,30 @@ std::vector<BankTransaction> TrueLayerClient::get_account_transactions(
 {
     set_subdomain("api");
 
-    start_date.tm_mday = 1;
-    end_date.tm_mday = 1;
-    const int n_months = tm_month_difference(start_date, end_date);
+    const auto end_date_timestamp = tm_to_timestamp(end_date);
 
     DEBUG_LOG("Sending /data/v1/accounts/%s/transactions GET request to TrueLayer",
               account_id.c_str());
     std::vector<BankTransaction> transactions;
     // Go month by month to reduce the number of transactions fetched in one go
-    for (int month = 0; month < n_months; month++)
+    bool keep_getting = true;
+    int month = 0;
+    while (keep_getting)
     {
         const struct tm first_date = add_tm_months(start_date, month);
+        if (tm_to_timestamp(first_date) > end_date_timestamp)
+            break;
+
+        struct tm last_date = add_tm_months(start_date, month + 1);
+        if (tm_to_timestamp(last_date) > end_date_timestamp)
+        {
+            last_date = end_date;
+            keep_getting = false;
+        }
+
+        month++;
+
         const std::string first_date_str = tm_to_iso8601(first_date) + "T00:00:00";
-        const struct tm last_date = add_tm_months(start_date, month + 1);
         const std::string last_date_str = tm_to_iso8601(last_date) + "T00:00:00";
         const std::string query = "from=" + first_date_str + "&to=" + last_date_str;
 
@@ -247,6 +258,7 @@ std::vector<BankTransaction> TrueLayerClient::get_account_transactions(
 
             const double amount = transaction.get("amount").Number();
             const std::string name = transaction.get("description").ToString();
+
             // Positive transactions mean money coming in to the account
             transactions.push_back(BankTransaction(code, amount, date, name));
         }
@@ -272,81 +284,6 @@ std::vector<BankTransaction> TrueLayerClient::get_all_transactions(struct tm sta
     }
 
     return transactions;
-}
-
-std::string TrueLayerClient::get_account_holder_name(const std::string &account_id)
-{
-    set_subdomain("api");
-
-    if (account_id != "")
-        WARNING_LOG("Cannot select account holder name with account ID in TrueLayer");
-
-    DEBUG_LOG("Sending /data/v1/info GET request to TrueLayer");
-    const HTTPSResponse response = get("/data/v1/info");
-
-    const JSON data = JSON::Load(response.get_body());
-    if (data.get("results").length() != 1)
-        THROW_EXCEPTION(kJSONParseError, "Could not find one result for account holder name");
-
-    return data.get("results").at(0).get("full_name").String();
-}
-
-std::string TrueLayerClient::get_business_name(const std::string &account_id)
-{
-    set_subdomain("api");
-
-    DEBUG_LOG("Sending /data/v1/info GET request to TrueLayer");
-    const HTTPSResponse response = get("/data/v1/info");
-
-    const JSON data = JSON::Load(response.get_body());
-    if (data.get("results").length() != 1)
-        THROW_EXCEPTION(kJSONParseError, "Could not find one result for account holder name");
-
-    const std::string full_name = data.get("results").at(0).get("full_name").String();
-
-    DEBUG_LOG("Sending /data/v1/accounts GET request to TrueLayer");
-    const HTTPSResponse accounts_response = get("/data/v1/accounts");
-
-    const JSON accounts_data = JSON::Load(accounts_response.get_body());
-    if (accounts_data.get("results").length() <= 0)
-        THROW_EXCEPTION(kJSONParseError, "Could not find any bank accounts");
-
-    std::vector<std::string> account_names;
-    for (const auto &account : accounts_data.get("results").ArrayRange())
-    {
-        std::string id = account.get("account_id").String();
-        if (account_id != "" && account_id != id)
-            continue;
-        account_names.push_back(account.get("display_name").String());
-    }
-
-    // Use the name that appears the most if there's more than one
-    std::map<std::string, int> name_occurrence;
-    for (const auto &name : account_names)
-        name_occurrence[name]++;
-    std::string display_name = account_names[0];
-    for (const auto &kv : name_occurrence)
-        if (kv.second > name_occurrence[display_name])
-            display_name = kv.first;
-
-    // TODO mapping to decide which of full_name or display_name to use
-    const std::string business_name = full_name + ": " + display_name;
-
-    return business_name;
-}
-
-std::string TrueLayerClient::get_institution_name()
-{
-    set_subdomain("api");
-
-    DEBUG_LOG("Sending /data/v1/me GET request to TrueLayer");
-    const HTTPSResponse response = get("/data/v1/me");
-
-    const JSON data = JSON::Load(response.get_body());
-    if (data.get("results").length() != 1)
-        THROW_EXCEPTION(kJSONParseError, "Could not find one result for access_token metadata");
-
-    return data.get("results").at(0).get("provider").get("display_name").String();
 }
 
 std::map<std::string, AccountNumbers> TrueLayerClient::get_account_details()
@@ -399,6 +336,12 @@ std::map<std::string, AccountNumbers> TrueLayerClient::get_account_details()
             bic = numbers.get("swift_bic").ToString();
         if (bic.empty())
             WARNING_LOG("BIC not provided");
+
+        if (bic == "NOT_SUPPORTED_BY_GEO" || bic == "NOT_SUPPORTED_BY_PROVIDER")
+        {
+            WARNING_LOG("BIC not supported: %s", bic.c_str());
+            bic.clear();
+        }
         account_details[id].set_bic(bic);
 
         std::string routing;

@@ -25,8 +25,6 @@
 #ifndef COMPILERSUPPORT_H
 #define COMPILERSUPPORT_H
 
-#include "cbor.h"
-
 #ifndef _BSD_SOURCE
 #define _BSD_SOURCE
 #endif

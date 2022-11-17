@@ -7,7 +7,6 @@
 #include "include/core_constants.h"
 
 #include "lib/common/enclave_exception.hpp"
-#include "lib/common/enclave_logger.hpp"
 
 namespace silentdata
 {

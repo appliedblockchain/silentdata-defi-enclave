@@ -34,8 +34,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "tinycbor-version.h"
-
 #define TINYCBOR_VERSION                                                                           \
     ((TINYCBOR_VERSION_MAJOR << 16) | (TINYCBOR_VERSION_MINOR << 8) | TINYCBOR_VERSION_PATCH)
 

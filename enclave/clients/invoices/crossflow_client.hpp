@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <array>
 #include <string>
 
 #include "lib/common/optional.hpp"
@@ -34,6 +35,7 @@ public:
         double interest_rate;
         int tenor;
         int timestamp;
+        std::array<uint8_t, CORE_ED25519_KEY_LEN> destination_pubkey;
     };
 
     CrossflowClient(const std::string &hostname, const uint32_t timestamp);

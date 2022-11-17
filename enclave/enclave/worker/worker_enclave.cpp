@@ -18,6 +18,7 @@
 #include "lib/common/enclave_logger.hpp"
 #include "lib/common/sgx_error_message.hpp"
 #include "lib/common/types.hpp"
+#include "lib/crypto/ec256_key_manager.hpp"
 #include "lib/crypto/ec256_key_pair.hpp"
 #include "lib/crypto/ed25519_key_pair.hpp"
 #include "lib/ias/report.hpp"
@@ -49,7 +50,8 @@
 
 using namespace silentdata::enclave;
 
-EC256KeyPair ec256_key_pair;
+EC256KeyManager ec256_key_manager(CORE_MAX_ENCRYPTION_KEYS);
+EC256KeyPair provision_key_pair;
 ED25519KeyPair ed25519_key_pair;
 
 void printf(const char *fmt, ...)
@@ -97,7 +99,7 @@ std::vector<uint8_t> get_private_key_data()
 {
     CBORMap cbor;
     cbor.insert("ed25519_signing_skey", ed25519_key_pair.private_key());
-    cbor.insert("encryption_skey", ec256_key_pair.private_key_bytes());
+    cbor.insert("encryption_skey", provision_key_pair.private_key_bytes());
 
     return cbor.encode_cbor();
 }
@@ -116,12 +118,12 @@ void set_keys_from_private_key_data(const std::vector<uint8_t> &private_key_data
     // Get the encryption key pair
     const std::vector<uint8_t> encryption_skey =
         cbor.get("encryption_skey").get_byte_string_value();
-    EC256KeyPair new_encryption_key_pair;
-    new_encryption_key_pair.set_private_key(encryption_skey);
+    EC256KeyPair new_provision_key_pair;
+    new_provision_key_pair.set_private_key(encryption_skey);
 
     // Store these key pairs in memory
     ed25519_key_pair = new_ed25519_signing_key_pair;
-    ec256_key_pair = new_encryption_key_pair;
+    provision_key_pair = new_provision_key_pair;
 }
 
 /**
@@ -216,28 +218,43 @@ ecall_get_sealed_keys(uint32_t max_bytes, uint8_t *sealed_key_data, uint32_t *us
 /**
  * @brief Return the enclave's public encryption & signing keys
  *
- * @param encryption_public_key the EC256 public key used for encryption
+ * @param encryption_public_key the EC256 public key used for one time encryption
+ * @param provision_public_key the EC256 public key used for encryption in provisioning step
  * @param ed25519_signing_public_key the ED25519 public key used for signing
+ * @param encryption_public_key_signature signature of the encryption_public_key by the signing key
  *
  * @return status code
  */
 CoreStatusCode ecall_get_public_keys(uint8_t *encryption_public_key,
-                                     uint8_t *ed25519_signing_public_key)
+                                     uint8_t *provision_public_key,
+                                     uint8_t *ed25519_signing_public_key,
+                                     uint8_t *encryption_public_key_signature)
 {
     return capture_exceptions([&]() {
         // Validate function argument pointers
-        if (encryption_public_key == nullptr || ed25519_signing_public_key == nullptr)
+        if (encryption_public_key == nullptr || ed25519_signing_public_key == nullptr ||
+            provision_public_key == nullptr || encryption_public_key_signature == nullptr)
             THROW_EXCEPTION(kInvalidInput, "One or more input pointers are null");
 
-        // Copy the public keys to output pointers
+        // Generate a new encryption key pair and sign it
+        const EC256KeyPair &ec256_key_pair = ec256_key_manager.generate_key();
         const std::array<uint8_t, CORE_ECC_KEY_LEN> encryption_public_key_bytes =
             ec256_key_pair.public_key_bytes();
         memcpy(encryption_public_key, encryption_public_key_bytes.data(), CORE_ECC_KEY_LEN);
 
+        const std::array<uint8_t, CORE_ED25519_SIG_LEN> signature =
+            ed25519_key_pair.sign(std::vector<uint8_t>(std::begin(encryption_public_key_bytes),
+                                                       std::end(encryption_public_key_bytes)));
+        memcpy(encryption_public_key_signature, signature.data(), CORE_ED25519_SIG_LEN);
+
+        // Copy the signing and provision public keys to output pointers
         const std::array<uint8_t, ED25519_KEY_LEN> ed25519_signing_public_key_bytes =
             ed25519_key_pair.public_key();
         memcpy(
             ed25519_signing_public_key, ed25519_signing_public_key_bytes.data(), ED25519_KEY_LEN);
+        const std::array<uint8_t, CORE_ECC_KEY_LEN> provision_public_key_bytes =
+            provision_key_pair.public_key_bytes();
+        memcpy(provision_public_key, provision_public_key_bytes.data(), CORE_ECC_KEY_LEN);
     });
 }
 
@@ -258,7 +275,7 @@ CoreStatusCode ecall_get_report(sgx_target_info_t *p_qe_target, sgx_report_t *p_
             THROW_EXCEPTION(kInvalidInput, "One or more input pointers are null");
 
         const sgx_report_t report = get_report(
-            *p_qe_target, ec256_key_pair.public_key_bytes(), ed25519_key_pair.public_key());
+            *p_qe_target, provision_key_pair.public_key_bytes(), ed25519_key_pair.public_key());
         *p_report = report;
     });
 }
@@ -267,12 +284,12 @@ void verify_enclaves_are_clones(sgx_target_info_t *p_qe_target,
                                 const char *ias_report_body,
                                 const char *ias_report_cert_chain,
                                 const uint8_t *ias_report_signature,
-                                const uint8_t *encryption_public_key,
+                                const uint8_t *provision_public_key,
                                 const uint8_t *ed25519_signing_public_key)
 {
     // Validate function argument pointers
     if (p_qe_target == nullptr || ias_report_body == nullptr || ias_report_cert_chain == nullptr ||
-        ias_report_signature == nullptr || encryption_public_key == nullptr ||
+        ias_report_signature == nullptr || provision_public_key == nullptr ||
         ed25519_signing_public_key == nullptr)
         THROW_EXCEPTION(kInvalidInput, "One or more input pointers are null");
 
@@ -280,8 +297,8 @@ void verify_enclaves_are_clones(sgx_target_info_t *p_qe_target,
     std::array<uint8_t, CORE_IAS_SIG_LEN> signature;
     memcpy(signature.data(), ias_report_signature, CORE_IAS_SIG_LEN);
 
-    std::array<uint8_t, CORE_ECC_KEY_LEN> encryption_public_key_bytes;
-    memcpy(encryption_public_key_bytes.data(), encryption_public_key, CORE_ECC_KEY_LEN);
+    std::array<uint8_t, CORE_ECC_KEY_LEN> provision_public_key_bytes;
+    memcpy(provision_public_key_bytes.data(), provision_public_key, CORE_ECC_KEY_LEN);
 
     std::array<uint8_t, CORE_ED25519_KEY_LEN> ed25519_signing_public_key_bytes;
     memcpy(
@@ -292,10 +309,10 @@ void verify_enclaves_are_clones(sgx_target_info_t *p_qe_target,
 
     // Verify the contents of the IAS report & that the enclave about which the attestation
     // relates is a clone of this enclave
-    const sgx_report_t verifier_report =
-        get_report(*p_qe_target, ec256_key_pair.public_key_bytes(), ed25519_key_pair.public_key());
+    const sgx_report_t verifier_report = get_report(
+        *p_qe_target, provision_key_pair.public_key_bytes(), ed25519_key_pair.public_key());
     verify_quote(ias_report_body,
-                 encryption_public_key_bytes,
+                 provision_public_key_bytes,
                  ed25519_signing_public_key_bytes,
                  verifier_report);
 }
@@ -308,7 +325,7 @@ void verify_enclaves_are_clones(sgx_target_info_t *p_qe_target,
  * @param ias_report_body JSON body of IAS response
  * @param ias_report_cert_chain signing certificate chain of IAS
  * @param ias_report_signature signature of report body
- * @param encryption_public_key public encryption key of peer enclave
+ * @param provision_public_key public encryption key of peer enclave
  * @param ed25519_signing_public_key public signing key of peer enclave
  * @param max_bytes the number of bytes allocated to encrypted_key_data (buffer size)
  * @param encrypted_key_data the output encrypted private key data (CBOR encoded)
@@ -320,7 +337,7 @@ CoreStatusCode ecall_get_encrypted_keys(sgx_target_info_t *p_qe_target,
                                         const char *ias_report_body,
                                         const char *ias_report_cert_chain,
                                         const uint8_t *ias_report_signature,
-                                        const uint8_t *encryption_public_key,
+                                        const uint8_t *provision_public_key,
                                         const uint8_t *ed25519_signing_public_key,
                                         uint32_t max_bytes,
                                         uint8_t *encrypted_key_data,
@@ -330,7 +347,7 @@ CoreStatusCode ecall_get_encrypted_keys(sgx_target_info_t *p_qe_target,
         // Validate function argument pointers
         if (p_qe_target == nullptr || ias_report_body == nullptr ||
             ias_report_cert_chain == nullptr || ias_report_signature == nullptr ||
-            encryption_public_key == nullptr || ed25519_signing_public_key == nullptr ||
+            provision_public_key == nullptr || ed25519_signing_public_key == nullptr ||
             encrypted_key_data == nullptr || used_bytes == nullptr)
             THROW_EXCEPTION(kInvalidInput, "One or more input pointers are null");
 
@@ -339,14 +356,14 @@ CoreStatusCode ecall_get_encrypted_keys(sgx_target_info_t *p_qe_target,
                                    ias_report_body,
                                    ias_report_cert_chain,
                                    ias_report_signature,
-                                   encryption_public_key,
+                                   provision_public_key,
                                    ed25519_signing_public_key);
 
         // Get the private key data, to be encrypted
         const std::vector<uint8_t> to_encrypt = get_private_key_data();
 
         // Encrypt the private key data (to be decrypted by the peer enclave)
-        const AESGCMKey symmetric_key = ec256_key_pair.ecdh(encryption_public_key);
+        const AESGCMKey symmetric_key = provision_key_pair.ecdh(provision_public_key);
         const std::vector<uint8_t> encrypted_bytes = symmetric_key.encrypt(to_encrypt);
 
         // Copy the encrypted data to the output pointer
@@ -367,7 +384,7 @@ CoreStatusCode ecall_get_encrypted_keys(sgx_target_info_t *p_qe_target,
  * @param ias_report_body JSON body of IAS response
  * @param ias_report_cert_chain signing certificate chain of IAS
  * @param ias_report_signature signature of report body
- * @param encryption_public_key public encryption key of peer enclave
+ * @param provision_public_key public encryption key of peer enclave
  * @param ed25519_signing_public_key public signing key of peer enclave
  * @param encrypted_key_data the output encrypted private key data (CBOR encoded)
  * @param encrypted_size the size of the encrypted_key_data
@@ -378,7 +395,7 @@ CoreStatusCode ecall_set_keys_from_encrypted(sgx_target_info_t *p_qe_target,
                                              const char *ias_report_body,
                                              const char *ias_report_cert_chain,
                                              const uint8_t *ias_report_signature,
-                                             const uint8_t *encryption_public_key,
+                                             const uint8_t *provision_public_key,
                                              const uint8_t *ed25519_signing_public_key,
                                              uint8_t *encrypted_key_data,
                                              uint32_t encrypted_size)
@@ -387,7 +404,7 @@ CoreStatusCode ecall_set_keys_from_encrypted(sgx_target_info_t *p_qe_target,
         // Validate function argument pointers
         if (p_qe_target == nullptr || ias_report_body == nullptr ||
             ias_report_cert_chain == nullptr || ias_report_signature == nullptr ||
-            encryption_public_key == nullptr || ed25519_signing_public_key == nullptr ||
+            provision_public_key == nullptr || ed25519_signing_public_key == nullptr ||
             encrypted_key_data == nullptr)
             THROW_EXCEPTION(kInvalidInput, "One or more input pointers are null");
 
@@ -396,14 +413,14 @@ CoreStatusCode ecall_set_keys_from_encrypted(sgx_target_info_t *p_qe_target,
                                    ias_report_body,
                                    ias_report_cert_chain,
                                    ias_report_signature,
-                                   encryption_public_key,
+                                   provision_public_key,
                                    ed25519_signing_public_key);
 
         // Decrypt the secret key data
         std::vector<uint8_t> encrypted_key_data_bytes(encrypted_size, 0);
         memcpy(encrypted_key_data_bytes.data(), encrypted_key_data, encrypted_size);
 
-        const AESGCMKey symmetric_key = ec256_key_pair.ecdh(encryption_public_key);
+        const AESGCMKey symmetric_key = provision_key_pair.ecdh(provision_public_key);
         const std::vector<uint8_t> decrypted_key_data =
             symmetric_key.decrypt(encrypted_key_data_bytes);
 
@@ -414,28 +431,37 @@ CoreStatusCode ecall_set_keys_from_encrypted(sgx_target_info_t *p_qe_target,
 
 // -------------------------------------------
 
+void initialize_request_buffers(const uint8_t *request_bytes, ProofResult *proof_result)
+{
+    // Validate function argument output pointers
+    if (request_bytes == nullptr || proof_result == nullptr)
+        THROW_EXCEPTION(kInvalidInput, "One or more of the function argument pointers is NULL");
+
+    std::memset(proof_result->data, 0, CORE_MAX_PROOF_LEN);
+    proof_result->data_size = 0;
+
+    std::memset(proof_result->signature, 0, ED25519_SIG_LEN);
+
+    std::memset(proof_result->certificate_data, 0, CORE_MAX_CERTIFICATE_LEN);
+    proof_result->certificate_data_size = 0;
+}
+
 CoreStatusCode ecall_plaid_get_link_token(const uint8_t *request_bytes,
                                           size_t request_size,
                                           ProofResult *proof_result)
 {
-    // Validate function argument output pointers
-    if (request_bytes == nullptr || proof_result == nullptr)
-    {
-        ERROR_LOG("One or more of the function argument pointers is NULL");
-        return kInvalidInput;
-    }
-
-    std::memset(proof_result->data, 0, CORE_MAX_PROOF_LEN);
-    std::memset(proof_result->signature, 0, ED25519_SIG_LEN);
-
     std::vector<uint8_t> encrypted_link;
     try
     {
+        initialize_request_buffers(request_bytes, proof_result);
+
         PlaidLinkTokenRequest req;
         if (!req.ParseFromArray(request_bytes, static_cast<int>(request_size)))
             THROW_EXCEPTION(kInvalidInput, "Cannot parse protobuf message");
-        const PlaidLinkRequestWrapper request(req, ec256_key_pair);
+        const std::string &public_key = req.client_info().enclave_encryption_public_key();
+        const PlaidLinkRequestWrapper request(req, ec256_key_manager.get_key_pair(public_key));
         encrypted_link = get_encrypted_link_token(request);
+        ec256_key_manager.remove_key_pair(public_key);
     }
     catch (const EnclaveException &e)
     {
@@ -459,24 +485,17 @@ CoreStatusCode ecall_check_crossflow_invoice(const uint8_t *request_bytes,
                                              size_t request_size,
                                              ProofResult *proof_result)
 {
-    // Validate function argument output pointers
-    if (request_bytes == nullptr || proof_result == nullptr)
-    {
-        ERROR_LOG("One or more of the function argument pointers is NULL");
-        return kInvalidInput;
-    }
-
-    std::memset(proof_result->data, 0, CORE_MAX_PROOF_LEN);
-    std::memset(proof_result->signature, 0, ED25519_SIG_LEN);
-
     // Initialize return pointers
     CheckResult result;
     try
     {
+        initialize_request_buffers(request_bytes, proof_result);
+
         CrossflowInvoiceCheckRequest req;
         if (!req.ParseFromArray(request_bytes, static_cast<int>(request_size)))
             THROW_EXCEPTION(kInvalidInput, "Cannot parse protobuf message");
-        const CrossflowInvoiceCheckRequestWrapper request(req, ec256_key_pair);
+        EC256KeyPair dummy_key_pair;
+        const CrossflowInvoiceCheckRequestWrapper request(req, dummy_key_pair);
         result = process_crossflow_invoice_proof(request, ed25519_key_pair);
     }
     catch (const EnclaveException &e)
@@ -515,25 +534,19 @@ CoreStatusCode ecall_minimum_balance_proof(const uint8_t *request_bytes,
                                            size_t request_size,
                                            ProofResult *proof_result)
 {
-    // Validate function argument output pointers
-    if (request_bytes == nullptr || proof_result == nullptr)
-    {
-        ERROR_LOG("One or more of the function argument pointers is NULL");
-        return kInvalidInput;
-    }
-
-    std::memset(proof_result->data, 0, CORE_MAX_PROOF_LEN);
-    std::memset(proof_result->signature, 0, ED25519_SIG_LEN);
-
     // Initialize return pointers
     CheckResult result;
     try
     {
+        initialize_request_buffers(request_bytes, proof_result);
+
         MinimumBalanceCheckRequest req;
         if (!req.ParseFromArray(request_bytes, static_cast<int>(request_size)))
             THROW_EXCEPTION(kInvalidInput, "Cannot parse protobuf message");
-        const BalanceCheckRequestWrapper request(req, ec256_key_pair);
+        const std::string &public_key = req.client_info().enclave_encryption_public_key();
+        const BalanceCheckRequestWrapper request(req, ec256_key_manager.get_key_pair(public_key));
         result = process_balance_proof(request, ed25519_key_pair);
+        ec256_key_manager.remove_key_pair(public_key);
     }
     catch (const EnclaveException &e)
     {
@@ -578,25 +591,19 @@ CoreStatusCode ecall_consistent_income_proof(const uint8_t *request_bytes,
                                              size_t request_size,
                                              ProofResult *proof_result)
 {
-    // Validate function argument output pointers
-    if (request_bytes == nullptr || proof_result == nullptr)
-    {
-        ERROR_LOG("One or more of the function argument pointers is NULL");
-        return kInvalidInput;
-    }
-
-    std::memset(proof_result->data, 0, CORE_MAX_PROOF_LEN);
-    std::memset(proof_result->signature, 0, ED25519_SIG_LEN);
-
     // Initialise padded struct
     CheckResult result;
     try
     {
+        initialize_request_buffers(request_bytes, proof_result);
+
         ConsistentIncomeCheckRequest req;
         if (!req.ParseFromArray(request_bytes, static_cast<int>(request_size)))
             THROW_EXCEPTION(kInvalidInput, "Cannot parse protobuf message");
-        const IncomeCheckRequestWrapper request(req, ec256_key_pair);
+        const std::string &public_key = req.client_info().enclave_encryption_public_key();
+        const IncomeCheckRequestWrapper request(req, ec256_key_manager.get_key_pair(public_key));
         result = process_income_proof(request, ed25519_key_pair);
+        ec256_key_manager.remove_key_pair(public_key);
     }
     catch (const EnclaveException &e)
     {
@@ -629,25 +636,19 @@ CoreStatusCode ecall_consistent_income_proof(const uint8_t *request_bytes,
 CoreStatusCode
 ecall_onfido_kyc_proof(const uint8_t *request_bytes, size_t request_size, ProofResult *proof_result)
 {
-    // Validate function argument output pointers
-    if (request_bytes == nullptr || proof_result == nullptr)
-    {
-        ERROR_LOG("One or more of the function argument pointers is NULL");
-        return kInvalidInput;
-    }
-
-    std::memset(proof_result->data, 0, CORE_MAX_PROOF_LEN);
-    std::memset(proof_result->signature, 0, ED25519_SIG_LEN);
-
     // Initialize return pointers
     CheckResult result;
     try
     {
+        initialize_request_buffers(request_bytes, proof_result);
+
         OnfidoKYCCheckRequest req;
         if (!req.ParseFromArray(request_bytes, static_cast<int>(request_size)))
             THROW_EXCEPTION(kInvalidInput, "Cannot parse protobuf message");
-        const OnfidoKYCCheckRequestWrapper request(req, ec256_key_pair);
+        const std::string &public_key = req.client_info().enclave_encryption_public_key();
+        const OnfidoKYCCheckRequestWrapper request(req, ec256_key_manager.get_key_pair(public_key));
         result = process_onfido_kyc_proof(request, ed25519_key_pair);
+        ec256_key_manager.remove_key_pair(public_key);
     }
     catch (const EnclaveException &e)
     {
@@ -680,25 +681,19 @@ ecall_onfido_kyc_proof(const uint8_t *request_bytes, size_t request_size, ProofR
 CoreStatusCode
 ecall_instagram_proof(const uint8_t *request_bytes, size_t request_size, ProofResult *proof_result)
 {
-    // Validate function argument output pointers
-    if (request_bytes == nullptr || proof_result == nullptr)
-    {
-        ERROR_LOG("One or more of the function argument pointers is NULL");
-        return kInvalidInput;
-    }
-
-    std::memset(proof_result->data, 0, CORE_MAX_PROOF_LEN);
-    std::memset(proof_result->signature, 0, ED25519_SIG_LEN);
-
     // Initialize return pointers
     CheckResult result;
     try
     {
+        initialize_request_buffers(request_bytes, proof_result);
+
         InstagramCheckRequest req;
         if (!req.ParseFromArray(request_bytes, static_cast<int>(request_size)))
             THROW_EXCEPTION(kInvalidInput, "Cannot parse protobuf message");
-        const InstagramCheckRequestWrapper request(req, ec256_key_pair);
+        const std::string &public_key = req.client_info().enclave_encryption_public_key();
+        const InstagramCheckRequestWrapper request(req, ec256_key_manager.get_key_pair(public_key));
         result = process_instagram_proof(request, ed25519_key_pair);
+        ec256_key_manager.remove_key_pair(public_key);
     }
     catch (const EnclaveException &e)
     {

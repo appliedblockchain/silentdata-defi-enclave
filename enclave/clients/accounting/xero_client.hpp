@@ -7,10 +7,7 @@
 #include <string>
 #include <vector>
 
-#include "lib/client/client_opt.h"
-#include "lib/client/https_client.hpp"
 #include "lib/client/https_response.hpp"
-#include "lib/common/decoders.hpp"
 #include "lib/common/encoders.hpp"
 #include "lib/common/json.hpp"
 #include "lib/common/types.hpp"
@@ -19,6 +16,7 @@
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wconversion"
+#pragma GCC diagnostic ignored "-Wshadow"
 #pragma GCC diagnostic ignored "-Wredundant-decls"
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wshadow"

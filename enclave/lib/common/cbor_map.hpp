@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "include/core_constants.h"
-#include "include/core_status_codes.h"
 
 #include "lib/cbor/cbor.h"
 #include "lib/common/enclave_exception.hpp"

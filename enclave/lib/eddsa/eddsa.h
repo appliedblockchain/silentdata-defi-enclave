@@ -44,7 +44,6 @@ extern "C"
 
     EDDSA_DECL void ed25519_sign(uint8_t sig[ED25519_SIG_LEN],
                                  const uint8_t sec[ED25519_KEY_LEN],
-                                 const uint8_t pub[ED25519_KEY_LEN],
                                  const uint8_t *data,
                                  size_t len);
 
@@ -82,11 +81,8 @@ extern "C"
     /* eddsa */
     EDDSA_DECL void eddsa_genpub(uint8_t pub[32], const uint8_t sec[32]);
 
-    EDDSA_DECL void eddsa_sign(uint8_t sig[64],
-                               const uint8_t sec[32],
-                               const uint8_t pub[32],
-                               const uint8_t *data,
-                               size_t len);
+    EDDSA_DECL void
+    eddsa_sign(uint8_t sig[64], const uint8_t sec[32], const uint8_t *data, size_t len);
 
     EDDSA_DECL bool
     eddsa_verify(const uint8_t sig[64], const uint8_t pub[32], const uint8_t *data, size_t len);

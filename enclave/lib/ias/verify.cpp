@@ -53,19 +53,22 @@ bool verify_signature(const std::string &cert_chain_string,
     mbedtls_md(mdinfo, reinterpret_cast<const uint8_t *>(content.data()), content.size(), md);
     ret = mbedtls_pk_verify(
         &pkey, mdinfo->type, md, mdinfo->size, signature.data(), signature.size());
-    if (ret != 0)
-        return THROW_OR_WARN(kIASFailed, "Signature not valid");
 
-    DEBUG_LOG("IAS signature verification ok!");
     mbedtls_x509_crt_free(&chain);
     mbedtls_x509_crt_free(&root);
     free(md);
 
+    if (ret != 0)
+    {
+        return THROW_OR_WARN(kIASFailed, "Signature not valid");
+    }
+
+    DEBUG_LOG("IAS signature verification ok!");
     return true;
 }
 
 bool verify_quote(const std::string &peer_ias_report_body,
-                  const std::array<uint8_t, CORE_ECC_KEY_LEN> &peer_encryption_public_key,
+                  const std::array<uint8_t, CORE_ECC_KEY_LEN> &peer_provision_public_key,
                   const std::array<uint8_t, CORE_ED25519_KEY_LEN> &peer_ed25519_signing_public_key,
                   const sgx_report_t &verifier_report)
 {
@@ -77,10 +80,15 @@ bool verify_quote(const std::string &peer_ias_report_body,
 
     // Verify that the hash of the input public keys matches that in the report body
     const std::array<uint8_t, CORE_SHA_256_LEN> hash =
-        get_public_keys_hash(peer_encryption_public_key, peer_ed25519_signing_public_key);
+        get_public_keys_hash(peer_provision_public_key, peer_ed25519_signing_public_key);
 
     if (memcmp(hash.data(), &quote->report_body.report_data.d, CORE_SHA_256_LEN) != 0)
         THROW_EXCEPTION(kIASFailed, "Hash of public keys does not match report");
+
+    // Verify the report version
+    const auto version = data.get("version").Int();
+    if (version != 4)
+        return THROW_OR_WARN(kIASFailed, "IAS report version is not 4");
 
     // Check that the warnings about the enclave are known and acceptable
     const std::string quote_status = data.get("isvEnclaveQuoteStatus").String();

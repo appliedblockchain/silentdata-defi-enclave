@@ -122,7 +122,9 @@ hash_from_msgpack_transaction(const std::vector<uint8_t> &encoded_transaction)
     // Check first byte corresponds to map with 7 elements (0x87)
     if (encoded_transaction.at(0) != 0x87)
         THROW_EXCEPTION(kDecodingError, "Signed data not msgpack encoded dummy transaction");
-    std::array<uint8_t, CORE_SHA_512_256_LEN> hash;
+    std::array<uint8_t, CORE_SHA_512_256_LEN> hash = {0};
+
+    bool found_note = false;
     size_t i = 1;
     while (i < encoded_transaction.size() - 38)
     {
@@ -136,7 +138,7 @@ hash_from_msgpack_transaction(const std::vector<uint8_t> &encoded_transaction)
         if (key == "note")
         {
             if (encoded_transaction.at(i) != 0xc4)
-                THROW_EXCEPTION(kDecodingError, "Invalid byte array size");
+                THROW_EXCEPTION(kDecodingError, "Invalid array tag");
             i += 1;
             const int byte_size = encoded_transaction.at(i);
             if (byte_size != CORE_SHA_512_256_LEN || encoded_transaction.size() < i + byte_size)
@@ -145,6 +147,8 @@ hash_from_msgpack_transaction(const std::vector<uint8_t> &encoded_transaction)
             std::copy(encoded_transaction.begin() + i,
                       encoded_transaction.begin() + i + CORE_SHA_512_256_LEN,
                       hash.begin());
+
+            found_note = true;
             break;
         }
         const uint8_t value_id = encoded_transaction.at(i);
@@ -169,6 +173,10 @@ hash_from_msgpack_transaction(const std::vector<uint8_t> &encoded_transaction)
         else
             THROW_EXCEPTION(kDecodingError, "Unexpected value type");
     }
+
+    if (!found_note)
+        THROW_EXCEPTION(kDecodingError, "note field not found");
+
     return hash;
 }
 

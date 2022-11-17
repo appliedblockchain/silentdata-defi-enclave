@@ -11,12 +11,7 @@
 
 #include "include/core_status_codes.h"
 
-#include "lib/client/client_opt.h"
-#include "lib/client/https_client.hpp"
 #include "lib/client/https_response.hpp"
-#include "lib/common/date_time.hpp"
-#include "lib/common/enclave_exception.hpp"
-#include "lib/common/enclave_logger.hpp"
 #include "lib/common/json.hpp"
 #include "lib/common/types.hpp"
 
@@ -81,18 +76,6 @@ public:
     std::vector<BankTransaction> get_all_transactions(struct tm start_date,
                                                       struct tm end_date,
                                                       const std::string &account_id = "");
-
-    // Send a request to the Plaid API to get the most common account holder name
-    std::string get_account_holder_name(const std::string &account_id = "");
-
-    // Plaid doesn't return the business name
-    std::string get_business_name(const std::string &account_id = "")
-    {
-        return get_account_holder_name(account_id);
-    }
-
-    // Get the institution ID from the balance data and obtain the name from the ID
-    std::string get_institution_name();
 
     // Get account information for all associated accounts
     std::map<std::string, AccountNumbers> get_account_details();

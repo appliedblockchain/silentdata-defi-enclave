@@ -7,19 +7,10 @@
 #include <string>
 #include <vector>
 
-#include "include/core_constants.h"
 #include "include/core_status_codes.h"
 
-#include "lib/common/cbor_map.hpp"
 #include "lib/common/credit_rating.hpp"
-#include "lib/common/date_time.hpp"
-#include "lib/common/decoders.hpp"
-#include "lib/common/enclave_exception.hpp"
-#include "lib/common/enclave_logger.hpp"
-#include "lib/common/encoders.hpp"
-#include "lib/common/json.hpp"
 #include "lib/crypto/ed25519_key_pair.hpp"
-#include "lib/crypto/hash.hpp"
 
 #include "clients/banking/plaid_client.hpp"
 #include "clients/banking/truelayer_client.hpp"

@@ -100,19 +100,21 @@ void WalletRequest::verify_wallet_signature() const
                         signed_data.size()))
         THROW_EXCEPTION(kSignatureVerificationError, "Failed to verify wallet signature");
 
-    verify_allowed_certificates();
+    verify_allowed_certificates(decrypted_data);
     return;
 }
 
-void WalletRequest::verify_allowed_certificates() const
+void WalletRequest::verify_allowed_certificates(const std::vector<uint8_t> &decrypted_data) const
 {
     DEBUG_LOG("Verifying allowed certificates");
     if (allowed_certificates_.size() > 0)
     {
-        const std::vector<uint8_t> decrypted_data = get_decrypted_input();
         CBORMap input_map(decrypted_data, {"certificate_hash"});
         std::vector<uint8_t> signed_hash =
             input_map.get("certificate_hash").get_byte_string_value();
+
+        if (signed_hash.size() != CORE_SHA_256_LEN)
+            THROW_EXCEPTION(kInvalidInput, "Signed certificate hash has the wrong size");
 
         const std::vector<uint8_t> certificates(client_info_.allowed_certificates().begin(),
                                                 client_info_.allowed_certificates().end());

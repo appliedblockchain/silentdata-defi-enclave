@@ -9,12 +9,6 @@
 
 #include "clients/api_client/api_client.hpp"
 
-#include "lib/client/client_opt.h"
-#include "lib/client/https_client.hpp"
-#include "lib/client/https_response.hpp"
-#include "lib/common/json.hpp"
-#include "lib/common/types.hpp"
-
 namespace silentdata
 {
 namespace enclave

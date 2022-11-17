@@ -160,6 +160,18 @@ std::string APIClient::json_to_form_encoding(const JSON &data) const
                 THROW_EXCEPTION(kInvalidInput, "JSON dumped string has character at back isn't \"");
 
             value_string = value_string.substr(1, value_string.length() - 2);
+
+            // Sanitize the string
+            for (const char c : value_string)
+            {
+                if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+                    (c == ':' || c == '/' || c == '.' || c == '-' || c == '_'))
+                    continue;
+
+                THROW_EXCEPTION(kInvalidInput,
+                                "JSON data contained string with forbidden character: " +
+                                    std::string(1, c));
+            }
         }
 
         if (!output.empty())

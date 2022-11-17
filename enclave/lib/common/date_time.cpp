@@ -304,24 +304,28 @@ int iso8601_to_timestamp(const std::string &date_str)
         return value_opt.value();
     };
 
-    int current_year = 1970;
+    const int start_year = 1902;
+    const int start_year_seconds_since_epoch = -2145916800;
+    int current_year = start_year;
     const auto consume_year = [&](std::string &s) -> Optional<int> {
         const auto opt = consume_n_digits(4, s);
         if (!opt.has_value())
             return Optional<int>();
 
         const auto year = opt.value();
-        if (year < 1970)
-            THROW_EXCEPTION(kDateTimeError, "Cannot convert dates before 1970 to timestamps");
+        if (year < start_year)
+            THROW_EXCEPTION(kDateTimeError,
+                            "Cannot convert dates before " + std::to_string(start_year) +
+                                " to timestamps");
 
         int days = 0;
-        for (int y = 1970; y < year; y++)
+        for (int y = start_year; y < year; y++)
         {
             days += is_leap_year(y) ? 366 : 365;
         }
 
         current_year = year;
-        return days * 24 * 60 * 60;
+        return (days * 24 * 60 * 60) + start_year_seconds_since_epoch;
     };
 
     int current_month = 0;
@@ -523,7 +527,7 @@ int tm_to_timestamp(const struct tm &date)
     int days = 0;
     for (int year = 1970; year < tm_year; year++)
     {
-        if (((year % 4 == 0) && (year % 100 != 0)) || (year % 400 == 0))
+        if (is_leap_year(year))
             days += 366;
         else
             days += 365;
@@ -531,7 +535,7 @@ int tm_to_timestamp(const struct tm &date)
     // Calculate the number of days from Jan 01 to the current day,
     // correcting for leap years
     days += std::accumulate(days_in_month.begin(), days_in_month.begin() + date.tm_mon, 0);
-    if (date.tm_mon > 1 && (((tm_year % 4 == 0) && (tm_year % 100 != 0)) || (tm_year % 400 == 0)))
+    if (date.tm_mon > 1 && is_leap_year(tm_year))
         days += 1;
     days += date.tm_mday - 1;
     // Calculate the number of seconds since Jan 01 1970
@@ -544,15 +548,19 @@ int tm_to_timestamp(const struct tm &date)
 
 struct tm timestamp_to_tm(const int timestamp)
 {
-    if (timestamp < 0)
-        THROW_EXCEPTION(kDateTimeError, "The input timestamp is negative");
+    const int start_year = 1902;
+    const int start_year_seconds_since_epoch = -2145916800;
+
+    if (timestamp < start_year_seconds_since_epoch)
+        THROW_EXCEPTION(kDateTimeError, "The input timestamp is too far into the past");
 
     struct tm date;
     const int seconds_in_day = 24 * 60 * 60;
-    int remaining_seconds = timestamp;
+    int64_t remaining_seconds =
+        static_cast<int64_t>(timestamp) - static_cast<int64_t>(start_year_seconds_since_epoch);
 
     // Determine the year
-    int year = 1970;
+    int year = start_year;
     while (true)
     {
         const auto days_in_year = is_leap_year(year) ? 366 : 365;
@@ -580,7 +588,7 @@ struct tm timestamp_to_tm(const int timestamp)
     date.tm_mon = month; // Months since January
 
     // Determine the day
-    date.tm_mday = 1 + (remaining_seconds / seconds_in_day); // Day of the month
+    date.tm_mday = 1 + (static_cast<int>(remaining_seconds) / seconds_in_day); // Day of the month
     if (date.tm_mday > 31)
         THROW_EXCEPTION(kDateTimeError, "Logical error - determined more than 31 days in a month!");
 
@@ -588,7 +596,7 @@ struct tm timestamp_to_tm(const int timestamp)
 
     // Determine the hour
     const auto seconds_in_hour = 60 * 60;
-    date.tm_hour = remaining_seconds / seconds_in_hour;
+    date.tm_hour = static_cast<int>(remaining_seconds) / seconds_in_hour;
     if (date.tm_hour > 23)
         THROW_EXCEPTION(kDateTimeError, "Logical error - determined more than 24 hours in a day!");
 
@@ -596,7 +604,7 @@ struct tm timestamp_to_tm(const int timestamp)
 
     // Determine the minute
     const auto seconds_in_minute = 60;
-    date.tm_min = remaining_seconds / seconds_in_minute;
+    date.tm_min = static_cast<int>(remaining_seconds) / seconds_in_minute;
     if (date.tm_min > 59)
         THROW_EXCEPTION(kDateTimeError,
                         "Logical error - determined more than 60 minutes in an hour!");
@@ -604,7 +612,7 @@ struct tm timestamp_to_tm(const int timestamp)
     remaining_seconds -= date.tm_min * seconds_in_minute;
 
     // Determine the seconds
-    date.tm_sec = remaining_seconds;
+    date.tm_sec = static_cast<int>(remaining_seconds);
     if (date.tm_sec > 59)
         THROW_EXCEPTION(kDateTimeError,
                         "Logical error - determined more than 60 seconds in a minute!");

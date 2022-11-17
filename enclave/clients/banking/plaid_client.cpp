@@ -130,7 +130,7 @@ PlaidLink PlaidClient::create_link_token(const std::string &client_user_id,
     JSON user = json::Object();
     user["client_user_id"] = client_user_id;
     request["user"] = user;
-    request["products"] = json::Array("identity");
+    request["products"] = json::Array("identity", "transactions");
     request["redirect_uri"] = redirect_uri_;
 
     // Make the HTTPS request
@@ -207,7 +207,7 @@ BankBalance PlaidClient::get_total_balance(const std::string &currency_code,
     double current = 0;
     for (const auto &account : data.get("accounts").ArrayRange())
     {
-        code = account.get("balances").get("iso_currency_code").String();
+        code = account.get("balances").get("iso_currency_code").ToString();
         if (code != currency_code)
         {
             WARNING_LOG("Currency code for this account doesn't match input, skipping...");
@@ -255,7 +255,13 @@ PlaidClient::get_transactions(const JSON &body, CoreStatusCode &error_code, int 
     // Get the transactions of all associated accounts
     for (const auto &transaction : data.get("transactions").ArrayRange())
     {
-        const std::string currency_code = transaction.get("iso_currency_code").String();
+        const std::string currency_code = transaction.get("iso_currency_code").ToString();
+        if (currency_code.empty())
+        {
+            WARNING_LOG("Currency code for this transaction is missing, skipping...");
+            continue;
+        }
+
         const std::string date_str = transaction.get("date").String();
         const struct tm date = iso8601_to_tm(date_str);
 
@@ -271,13 +277,8 @@ std::vector<BankTransaction> PlaidClient::get_all_transactions(struct tm start_d
                                                                struct tm end_date,
                                                                const std::string &account_id)
 {
-    // Shift dates to first days of the month and convert the dates to strings
-    start_date.tm_mday = 1;
     const std::string start_date_str = tm_to_iso8601(start_date);
-    int end_date_day = end_date.tm_mday;
-    end_date.tm_mday = 1;
     const std::string end_date_str = tm_to_iso8601(end_date);
-    end_date.tm_mday = end_date_day;
 
     // Close the client after each connection because we might be waiting a while and that can
     // cause the peer to close the connection
@@ -375,73 +376,6 @@ std::vector<BankTransaction> PlaidClient::get_all_transactions(struct tm start_d
     }
 
     return transactions;
-}
-
-std::string PlaidClient::get_account_holder_name(const std::string &account_id)
-{
-    JSON request = default_request_body();
-    // If we're matching a specific account
-    if (account_id != "")
-    {
-        JSON options = json::Object();
-        options["account_ids"] = json::Array(account_id);
-        request["options"] = options;
-    }
-
-    DEBUG_LOG("Sending /identity/get POST request to Plaid");
-    const HTTPSResponse response = post("/identity/get", request.dump());
-
-    const JSON data = JSON::Load(response.get_body());
-    std::vector<std::string> names;
-    for (const auto &account : data.get("accounts").ArrayRange())
-    {
-        for (const auto &owner : account.get("owners").ArrayRange())
-        {
-            for (const auto &name : owner.get("names").ArrayRange())
-            {
-                if (name.IsString())
-                    names.push_back(name.String());
-            }
-        }
-    }
-    if (names.size() == 0)
-        THROW_EXCEPTION(kJSONParseError,
-                        "Could not obtain the account holder name from the JSON body");
-
-    // Use the name that appears the most
-    std::map<std::string, int> name_occurrence;
-    for (const auto &name : names)
-        name_occurrence[name]++;
-    std::string account_holder_name_str = names[0];
-    for (const auto &kv : name_occurrence)
-        if (kv.second > name_occurrence[account_holder_name_str])
-            account_holder_name_str = kv.first;
-
-    return account_holder_name_str;
-}
-
-std::string PlaidClient::get_institution_name()
-{
-    DEBUG_LOG("Sending /item/get POST request to Plaid");
-    const HTTPSResponse response = post("/item/get");
-
-    const JSON data = JSON::Load(response.get_body());
-    const std::string institution_id = data.get("item").get("institution_id").String();
-
-    JSON request = json::Object();
-    request["client_id"] = client_id_;
-    request["secret"] = secret_;
-    request["institution_id"] = institution_id;
-    request["country_codes"] = "[]";
-
-    DEBUG_LOG("Sending /institutions/get_by_id POST request to Plaid");
-    const HTTPSResponse name_response = post("/institutions/get_by_id", request.dump());
-
-    // Parse the response to get the balances of all associated accounts
-    const JSON name_data = JSON::Load(name_response.get_body());
-    const std::string institution_name = name_data.get("institution").get("name").String();
-
-    return institution_name;
 }
 
 std::map<std::string, AccountNumbers> PlaidClient::get_account_details()

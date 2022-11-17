@@ -8,12 +8,7 @@
 #include <string>
 #include <vector>
 
-#include "include/core_constants.h"
-#include "include/core_status_codes.h"
-
 #include "lib/common/decoders.hpp"
-#include "lib/common/types.hpp"
-#include "lib/crypto/aes_gcm_key.hpp"
 #include "lib/crypto/ec256_key_pair.hpp"
 #include "lib/crypto/hash.hpp"
 #include "lib/eddsa/eddsa.h"
@@ -74,7 +69,7 @@ public:
         return get_symmetric_key().decrypt(encrypted_signed_data_);
     }
     void verify_wallet_signature() const;
-    void verify_allowed_certificates() const;
+    void verify_allowed_certificates(const std::vector<uint8_t> &decrypted_data) const;
 
 private:
     std::array<uint8_t, CORE_SHA_512_256_LEN> get_decrypted_data_hash_from_signed_data() const;

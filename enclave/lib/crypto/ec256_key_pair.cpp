@@ -2,6 +2,7 @@
 #include <ipp/ippcp.h>
 
 #include "lib/common/enclave_exception.hpp"
+#include "lib/crypto/hash.hpp"
 
 namespace silentdata
 {
@@ -108,13 +109,17 @@ AESGCMKey EC256KeyPair::ecdh(const uint8_t *peer_public_key_bytes) const
     if (sgx_status != SGX_SUCCESS)
         THROW_EXCEPTION(kECDHError, sgx_error_message("sgx_ecc256_close_context", sgx_status));
 
-    // "Key derivation": Take the first 16 bits of the big-endian representation
-    // to replicate what the JS code does
+    // Key derivation:
+    // - Take the SHA256 hash of the big-endian representation of the full secret
+    // - Truncate the hash digest to the first CORE_SHARED_SECRET_LEN bytes
+    std::vector<uint8_t> shared_secret_full_reversed(SGX_ECP256_KEY_SIZE, 0);
+    for (size_t i = 0; i < SGX_ECP256_KEY_SIZE; ++i)
+        shared_secret_full_reversed[i] = shared_secret_full.s[SGX_ECP256_KEY_SIZE - 1 - i];
+
+    const std::array<uint8_t, CORE_SHA_256_LEN> digest =
+        Hash::get_SHA_256_digest(shared_secret_full_reversed);
     sgx_aes_gcm_128bit_key_t shared_secret;
-    for (size_t i = 0; i < CORE_SHARED_SECRET_BITS; i++)
-    {
-        shared_secret[i] = shared_secret_full.s[31 - i];
-    }
+    memcpy(shared_secret, digest.data(), CORE_SHARED_SECRET_LEN);
 
     return AESGCMKey(&shared_secret);
 }

@@ -188,12 +188,14 @@ OnfidoClient::TimedIdVector OnfidoClient::get_report_ids(const std::string &appl
     const std::string payload = "applicant_id=" + applicant_id;
 
     const auto retry = true;
-    const std::string error_message = "An error occured during GET request to Onfido server:\n"
-                                      "  - Endpoint: " +
-                                      endpoint +
-                                      "\n"
-                                      "  - Query: " +
-                                      payload;
+    const auto get_error_message = [&]() {
+        return "An error occured during GET request to Onfido server:\n"
+               "  - Endpoint: " +
+               endpoint +
+               "\n"
+               "  - Query: " +
+               payload;
+    };
 
     DEBUG_LOG("Sending get request with payload: %s", payload.c_str());
     try
@@ -202,11 +204,12 @@ OnfidoClient::TimedIdVector OnfidoClient::get_report_ids(const std::string &appl
     }
     catch (const std::exception &e)
     {
-        THROW_EXCEPTION(kHTTPRequestError, error_message + "\n  - Error: " + std::string(e.what()));
+        THROW_EXCEPTION(kHTTPRequestError,
+                        get_error_message() + "\n  - Error: " + std::string(e.what()));
     }
     catch (...)
     {
-        THROW_EXCEPTION(kHTTPRequestError, error_message);
+        THROW_EXCEPTION(kHTTPRequestError, get_error_message());
     }
 }
 

@@ -7,11 +7,9 @@
 #include <string>
 #include <vector>
 
-#include "lib/client/client_opt.h"
 #include "lib/client/https_client.hpp"
 #include "lib/client/https_response.hpp"
 #include "lib/common/json.hpp"
-#include "lib/common/types.hpp"
 
 namespace silentdata
 {
@@ -41,7 +39,6 @@ protected:
 
     CoreStatusCode get_HTTP_status(const int status_code) const;
     json::JSON parse_json(const HTTPSResponse &response) const;
-    std::string json_to_form_encoding(const json::JSON &data) const;
 
 public:
     APIClient(const std::string &host,
@@ -55,6 +52,7 @@ public:
     const std::string &get_timestamp() const { return last_timestamp_; }
     const std::string &get_certificate_chain() const { return last_certificate_chain_; }
     void set_host(const std::string &host) { host_ = host; }
+    std::string json_to_form_encoding(const json::JSON &data) const;
 };
 
 } // namespace enclave

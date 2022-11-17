@@ -30,6 +30,9 @@ APIRequest::APIRequest(const std::vector<APIConfig> &api_configs,
     // ATTN for some use cases, the client public key isn't required and so can be passed as empty
     if (!client_info.encryption_public_key().empty())
     {
+        if (client_info.encryption_public_key().size() != CORE_ECC_KEY_LEN)
+            THROW_EXCEPTION(kInvalidInput, "Encryption public key is the wrong size");
+
         symmetric_key_ = key_pair.ecdh(
             reinterpret_cast<const uint8_t *>(client_info.encryption_public_key().data()));
         has_symmetric_key_ = true;
